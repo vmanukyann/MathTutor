@@ -4,7 +4,9 @@ import base64
 from openai import OpenAI
 import os
 import soundfile as sf
+from dotenv import load_dotenv
 from voxcpm import VoxCPM
+
 
 def encode_image(image_path):
     """Encodes an image to base64 for Ollama VLM."""
@@ -14,7 +16,9 @@ def encode_image(image_path):
             return base64.b64encode(buffer.getvalue()).decode('utf-8')
         
 # Load the API key from an environment variable
-client = OpenAI(api_key="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")
+load_dotenv()
+print("ENV KEY:", os.getenv("OPENAI_API_KEY"))
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def openai_do_problem(modelname, filename):
     # Example usage with an image
@@ -49,8 +53,9 @@ def openai_do_problem(modelname, filename):
 
 voice_sample_path = r"C:\Users\vmanukyan135\MathTutor\voices\sampleVoice.wav"  # Fixed with raw string
 model = VoxCPM.from_pretrained("openbmb/VoxCPM-0.5B")
+problem = r"C:\Users\vmanukyan135\MathTutor\math-problems"  # Fixed with raw string
 
-for filename in ["p3.jpg", "p2.jpg"]:
+for filename in ["p3.jpg"]:
     for modelname in ["gpt-4.1-mini"]:
         print('-'*5+modelname+'-'*5+filename+'-'*5)
         text_to_speak = openai_do_problem(modelname, filename)
