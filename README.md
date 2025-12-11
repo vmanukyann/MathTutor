@@ -14,7 +14,7 @@ The goal is to move beyond simple calculators. MathTutor guides the student thro
 
 ---
 
-## 💻 Tech Stack
+## Tech Stack
 
 | Category | Technology | Purpose |
 | :--- | :--- | :--- |
