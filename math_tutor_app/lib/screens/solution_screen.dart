@@ -15,7 +15,10 @@ class SolutionScreen extends StatefulWidget {
 
 class _SolutionScreenState extends State<SolutionScreen> {
   bool _isLoading = true;
-  String _solution = '';
+
+  // 🔴 CHANGED: was String
+  List<SolutionBlock> _solution = [];
+
   String _error = '';
   final OpenAIService _openAIService = OpenAIService();
 
@@ -27,7 +30,9 @@ class _SolutionScreenState extends State<SolutionScreen> {
 
   Future<void> _analyzeProblem() async {
     try {
-      final solution = await _openAIService.analyzeMathProblem(widget.imagePath);
+      final solution =
+          await _openAIService.analyzeMathProblem(widget.imagePath);
+
       setState(() {
         _solution = solution;
         _isLoading = false;
@@ -72,7 +77,7 @@ class _SolutionScreenState extends State<SolutionScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Show the captured image
+                  // Captured image
                   Container(
                     width: double.infinity,
                     height: 200,
@@ -86,52 +91,21 @@ class _SolutionScreenState extends State<SolutionScreen> {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  
-                  // Show error or solution
+
+                  // Error or solution
                   if (_error.isNotEmpty)
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.red),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Row(
-                            children: [
-                              Icon(Icons.error, color: Colors.red),
-                              SizedBox(width: 8),
-                              Text(
-                                'Error',
-                                style: TextStyle(
-                                  color: Colors.red,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _error,
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          const SizedBox(height: 16),
-                          const Text(
-                            'Please make sure you have:\n1. Set your OpenAI API key in the code\n2. Have sufficient credits in your OpenAI account\n3. Have a valid internet connection',
-                            style: TextStyle(color: Colors.white70, fontSize: 14),
-                          ),
-                        ],
-                      ),
-                    )
+                    _buildErrorBox()
                   else
-                    SolutionParser.buildFormattedSolution(_solution),
-                  
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: _solution
+                          .map(SolutionParser.buildSolutionBlock)
+                          .toList(),
+                    ),
+
                   const SizedBox(height: 24),
-                  
-                  // Action buttons
+
+                  // Action button
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
@@ -155,6 +129,49 @@ class _SolutionScreenState extends State<SolutionScreen> {
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _buildErrorBox() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.red.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.red),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.error, color: Colors.red),
+              SizedBox(width: 8),
+              Text(
+                'Error',
+                style: TextStyle(
+                  color: Colors.red,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _error,
+            style: const TextStyle(color: Colors.white),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Please make sure you have:\n'
+            '1. Set your OpenAI API key\n'
+            '2. Sufficient OpenAI credits\n'
+            '3. A valid internet connection',
+            style: TextStyle(color: Colors.white70, fontSize: 14),
+          ),
+        ],
+      ),
     );
   }
 }
