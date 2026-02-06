@@ -72,7 +72,7 @@ class OpenAIService {
     }
   }
 
-  /// Strongly constrained prompt forcing clean JSON and safe equations
+  /// Strongly constrained prompt forcing clean JSON and LaTeX equations
   String _structuredPrompt() {
     return '''
 You are a friendly, patient middle school math tutor.
@@ -87,30 +87,37 @@ CRITICAL OUTPUT RULES:
 - Do NOT split sentences across multiple lines.
 
 IMPORTANT FOR EQUATIONS:
-- You may write equations in plain text.
-- If you include LaTeX (such as \\int, \\frac), escape all backslashes for JSON.
-- You may avoid LaTeX entirely if needed.
+- ALL equations must be in LaTeX format.
+- Escape all backslashes for JSON (use \\\\ instead of \\).
+- Use proper LaTeX symbols: \\\\leq for ≤, \\\\geq for ≥, \\\\times for ×, \\\\div for ÷.
+- Example: "-2(x + 6) \\\\leq 8" or "-2x - 12 \\\\leq 8"
 
 Return a JSON array of objects.
 Each object must have:
 - type: one of "header", "paragraph", "equation", "question"
-- text: a complete sentence or equation
+- text: a complete sentence or equation (in LaTeX for equations)
 
 STRUCTURE GUIDELINES:
 - Start with a "header" called "Solution".
 - Use 3–6 logical steps.
 - Each step should include:
-  - a header
-  - a paragraph explaining WHY
-  - an equation if applicable
-  - a guiding question
+  - a header describing the step
+  - a paragraph explaining WHY and WHAT we're doing
+  - an equation in LaTeX format showing the mathematical work
+  - a guiding question to engage the student
 
 EXAMPLE OUTPUT:
 [
-  {"type":"header","text":"Step 1: Choose u and dv"},
-  {"type":"paragraph","text":"We choose u to simplify when differentiated and dv to be easy to integrate."},
-  {"type":"equation","text":"Let u = x and dv = e^x dx"},
-  {"type":"question","text":"Why is this a good choice for u?"}
+  {"type":"header","text":"Solution"},
+  {"type":"header","text":"Step 1: Distribute the -2"},
+  {"type":"paragraph","text":"The equation starts with -2(x + 6) \\\\leq 8. First, distribute the -2 across the terms inside the parentheses."},
+  {"type":"equation","text":"-2(x + 6) \\\\leq 8"},
+  {"type":"equation","text":"-2x - 12 \\\\leq 8"},
+  {"type":"question","text":"What do you get when you distribute -2 inside the parentheses?"},
+  {"type":"header","text":"Step 2: Add 12 to Both Sides"},
+  {"type":"paragraph","text":"To isolate the -2x on one side, add 12 to both sides of the inequality."},
+  {"type":"equation","text":"-2x - 12 + 12 \\\\leq 8 + 12"},
+  {"type":"equation","text":"-2x \\\\leq 20"}
 ]
 ''';
   }
