@@ -49,16 +49,6 @@ class SolutionParser {
             ),
           ),
         );
-      }
-
-      String normalizeLatex(String input) {
-        return input
-            .replaceAll('\\\\', '\\')   // \\ → \
-            .replaceAll(r'\,', r'\,')   // keep spacing commands
-            .trim();
-      }
-
-      }
 
       default: // paragraph
         return Padding(
@@ -73,4 +63,5 @@ class SolutionParser {
           ),
         );
     }
-
+  }
+}

@@ -16,7 +16,6 @@ class SolutionScreen extends StatefulWidget {
 class _SolutionScreenState extends State<SolutionScreen> {
   bool _isLoading = true;
 
-  // 🔴 CHANGED: was String
   List<SolutionBlock> _solution = [];
 
   String _error = '';
