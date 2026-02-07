@@ -3,9 +3,10 @@ import 'package:camera/camera.dart';
 import '../constants/colors.dart';
 import 'scan_screen.dart';
 
+// Main home screen widget - shows the landing page with the scan button
 class HomeScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
-
+  
   const HomeScreen({Key? key, required this.cameras}) : super(key: key);
 
   @override
@@ -13,6 +14,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
+  // Controllers for the pulsing and floating animations
   late AnimationController _pulseController;
   late AnimationController _floatController;
   late Animation<double> _pulseAnimation;
@@ -22,6 +24,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     
+    // Setup pulsing animation for the scan button - makes it breathe a bit
     _pulseController = AnimationController(
       duration: const Duration(seconds: 2),
       vsync: this,
@@ -31,6 +34,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
+    // Floating animation for the background math symbols
     _floatController = AnimationController(
       duration: const Duration(seconds: 3),
       vsync: this,
@@ -43,6 +47,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    // Clean up animation controllers to prevent memory leaks
     _pulseController.dispose();
     _floatController.dispose();
     super.dispose();
@@ -53,7 +58,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return Scaffold(
       body: Stack(
         children: [
-          // Animated gradient background
+          // Dark gradient background - gives that sleek modern look
           AnimatedBuilder(
             animation: _floatController,
             builder: (context, child) {
@@ -73,7 +78,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             },
           ),
           
-          // Floating math symbols
+          // Background floating math symbols - just for aesthetics
           ...List.generate(5, (index) {
             return AnimatedBuilder(
               animation: _floatAnimation,
@@ -101,20 +106,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           SafeArea(
             child: Column(
               children: [
-                // Modern header
+                // Top header with logo and history button
                 Padding(
                   padding: const EdgeInsets.all(20),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
+                      // App icon on the left
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: AppColors.primary.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(Icons.calculate, color: AppColors.primary, size: 24),
+                        child: const Icon(Icons.calculate, 
+                          color: AppColors.primary, size: 24),
                       ),
+                      
+                      // App name in the center
                       const Text(
                         'MathTutor',
                         style: TextStyle(
@@ -123,22 +132,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           color: AppColors.textWhite,
                         ),
                       ),
+                      
+                      // History button on the right
                       IconButton(
-                        icon: const Icon(Icons.history, color: AppColors.textGrey),
-                        onPressed: () {},
+                        icon: const Icon(Icons.history, 
+                          color: AppColors.textGrey),
+                        onPressed: () {
+                          // TODO: navigate to history screen
+                        },
                       ),
                     ],
                   ),
                 ),
-
+                
                 const Spacer(),
 
-                // Main content
+                // Main content area
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Column(
                     children: [
-                      // Title
+                      // Main headline
                       const Text(
                         'Solve any problem',
                         textAlign: TextAlign.center,
@@ -153,6 +167,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       
                       const SizedBox(height: 12),
                       
+                      // Subtitle/description
                       Text(
                         'Scan, solve, and understand math instantly',
                         textAlign: TextAlign.center,
@@ -166,13 +181,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       
                       const SizedBox(height: 60),
 
-                      // Scan button
+                      // Big circular scan button - the main CTA
                       GestureDetector(
                         onTap: () {
+                          // Navigate to camera screen when tapped
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => ScanScreen(cameras: widget.cameras),
+                              builder: (context) => 
+                                ScanScreen(cameras: widget.cameras),
                             ),
                           );
                         },
@@ -193,7 +210,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           child: const Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.camera_alt_rounded, size: 56, color: Colors.white),
+                              Icon(Icons.camera_alt_rounded, 
+                                size: 56, color: Colors.white),
                               SizedBox(height: 12),
                               Text(
                                 'Scan',
@@ -208,30 +226,34 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           ),
                         ),
                       ),
-
+                      
                       const SizedBox(height: 50),
 
-                      // Quick action buttons
+                      // Secondary action buttons at the bottom
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           _QuickActionButton(
                             icon: Icons.keyboard_outlined,
                             label: 'Type',
-                            onTap: () {},
+                            onTap: () {
+                              // TODO: open keyboard input screen
+                            },
                           ),
                           const SizedBox(width: 20),
                           _QuickActionButton(
                             icon: Icons.photo_library_outlined,
                             label: 'Upload',
-                            onTap: () {},
+                            onTap: () {
+                              // TODO: open image picker
+                            },
                           ),
                         ],
                       ),
                     ],
                   ),
                 ),
-
+                
                 const Spacer(),
                 const SizedBox(height: 40),
               ],
@@ -243,6 +265,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 }
 
+// Reusable button widget for the quick actions (Type & Upload)
 class _QuickActionButton extends StatelessWidget {
   final IconData icon;
   final String label;

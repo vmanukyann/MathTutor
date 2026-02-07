@@ -3,6 +3,7 @@ import 'package:camera/camera.dart';
 import '../constants/colors.dart';
 import 'solution_screen.dart';
 
+// Camera screen where users can scan math problems
 class ScanScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
 
@@ -14,7 +15,7 @@ class ScanScreen extends StatefulWidget {
 
 class _ScanScreenState extends State<ScanScreen> {
   CameraController? _controller;
-  bool _isProcessing = false;
+  bool _isProcessing = false; // Prevent multiple captures at once
 
   @override
   void initState() {
@@ -22,26 +23,30 @@ class _ScanScreenState extends State<ScanScreen> {
     _initCamera();
   }
 
+  /// Initialize the camera when the screen loads
   Future<void> _initCamera() async {
     if (widget.cameras.isEmpty) return;
     
+    // Use the first camera (usually the back camera)
     _controller = CameraController(
       widget.cameras[0],
-      ResolutionPreset.high,
+      ResolutionPreset.high, // High quality for better text recognition
     );
 
     await _controller!.initialize();
     if (mounted) {
-      setState(() {});
+      setState(() {}); // Rebuild to show the camera preview
     }
   }
 
   @override
   void dispose() {
+    // Clean up the camera controller when leaving the screen
     _controller?.dispose();
     super.dispose();
   }
 
+  /// Takes a picture and navigates to the solution screen
   Future<void> _takePicture() async {
     if (_controller == null || !_controller!.value.isInitialized || _isProcessing) {
       return;
@@ -52,9 +57,11 @@ class _ScanScreenState extends State<ScanScreen> {
     });
 
     try {
+      // Capture the image
       final image = await _controller!.takePicture();
       
       if (mounted) {
+        // Navigate to solution screen with the captured image
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -73,6 +80,7 @@ class _ScanScreenState extends State<ScanScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Show loading spinner while camera initializes
     if (_controller == null || !_controller!.value.isInitialized) {
       return const Scaffold(
         backgroundColor: AppColors.background,
@@ -91,17 +99,23 @@ class _ScanScreenState extends State<ScanScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
+          // Flash button - not implemented yet but left for future
           IconButton(
             icon: const Icon(Icons.flash_off),
-            onPressed: () {},
+            onPressed: () {
+              // TODO: toggle flash
+            },
           ),
         ],
       ),
       body: Stack(
         children: [
+          // Camera preview fills the entire screen
           Positioned.fill(
             child: CameraPreview(_controller!),
           ),
+          
+          // Focus frame overlay - helps users align the problem
           Center(
             child: Container(
               width: MediaQuery.of(context).size.width * 0.8,
@@ -112,6 +126,8 @@ class _ScanScreenState extends State<ScanScreen> {
               ),
             ),
           ),
+          
+          // Instruction text
           const Positioned(
             bottom: 150,
             left: 0,
@@ -129,6 +145,8 @@ class _ScanScreenState extends State<ScanScreen> {
               ],
             ),
           ),
+          
+          // Camera shutter button at the bottom
           Positioned(
             bottom: 40,
             left: 0,

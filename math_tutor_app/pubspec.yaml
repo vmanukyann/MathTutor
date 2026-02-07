@@ -33,7 +33,8 @@ dependencies:
   camera: ^0.10.5+5
   http: ^1.1.2
   path_provider: ^2.1.1
-  flutter_math_fork: ^0.7.2  # Add this line
+  flutter_math_fork: ^0.7.2
+  audioplayers: ^5.2.1
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
