@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
+import 'dart:math';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter_math_fork/flutter_math.dart';
 import '../constants/colors.dart';
 import '../services/openai_service.dart';
-import '../widgets/solution_parser.dart';
 
 // Screen that shows the solution to a captured math problem
 class SolutionScreen extends StatefulWidget {
@@ -16,9 +17,9 @@ class SolutionScreen extends StatefulWidget {
 }
 
 class _SolutionScreenState extends State<SolutionScreen> {
-  bool _isLoading = true; // Track if we're still waiting for the AI response
-  List<SolutionBlock> _solution = []; // The structured solution blocks from OpenAI
-  String _error = ''; // Store any error messages
+  bool _isLoading = true;
+  List<SolutionBlock> _solution = [];
+  String _error = '';
   final OpenAIService _openAIService = OpenAIService();
   
   // Audio playback state
@@ -29,9 +30,28 @@ class _SolutionScreenState extends State<SolutionScreen> {
   Duration _audioDuration = Duration.zero;
   Duration _audioPosition = Duration.zero;
 
+  // Random motivational quote
+  late String _motivationalQuote;
+  
+  // Track which steps are expanded
+  final Map<int, bool> _expandedSteps = {};
+
+  // List of motivational quotes
+  static const List<String> _quotes = [
+    "Let's work this out!",
+    "Time to solve this together!",
+    "Let's break this down step by step!",
+    "You've got this! Let's go!",
+    "Here's how we solve it!",
+    "Let's figure this out together!",
+  ];
+
   @override
   void initState() {
     super.initState();
+    // Pick a random quote
+    _motivationalQuote = _quotes[Random().nextInt(_quotes.length)];
+    
     // Start analyzing as soon as the screen loads
     _analyzeProblem();
     
@@ -80,7 +100,6 @@ class _SolutionScreenState extends State<SolutionScreen> {
         _isLoading = false;
       });
     } catch (e) {
-      // If something goes wrong, show the error instead
       setState(() {
         _error = e.toString();
         _isLoading = false;
@@ -147,6 +166,44 @@ class _SolutionScreenState extends State<SolutionScreen> {
     });
   }
 
+  /// Groups solution blocks into steps
+  List<Map<String, dynamic>> _groupIntoSteps() {
+    List<Map<String, dynamic>> steps = [];
+    Map<String, dynamic>? currentStep;
+
+    for (var block in _solution) {
+      // Skip the main "Solution" header
+      if (block.type == 'header' && block.text.toLowerCase() == 'solution') {
+        continue;
+      }
+
+      // If it's a step header, start a new step
+      if (block.type == 'header' && 
+          (block.text.toLowerCase().contains('step') || 
+           block.text.toLowerCase().startsWith('step'))) {
+        // Save previous step if exists
+        if (currentStep != null) {
+          steps.add(currentStep);
+        }
+        // Start new step
+        currentStep = {
+          'title': block.text,
+          'blocks': <SolutionBlock>[],
+        };
+      } else if (currentStep != null) {
+        // Add block to current step
+        (currentStep['blocks'] as List<SolutionBlock>).add(block);
+      }
+    }
+
+    // Add the last step
+    if (currentStep != null && (currentStep['blocks'] as List).isNotEmpty) {
+      steps.add(currentStep);
+    }
+
+    return steps;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -158,16 +215,9 @@ class _SolutionScreenState extends State<SolutionScreen> {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('Solution'),
-        actions: [
-          // Audio button in the app bar
-          if (!_isLoading && _solution.isNotEmpty && _error.isEmpty)
-            _buildAudioButton(),
-        ],
       ),
       body: _isLoading
-          ? // Show loading spinner while we wait for the AI
-          const Center(
+          ? const Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -180,115 +230,154 @@ class _SolutionScreenState extends State<SolutionScreen> {
                 ],
               ),
             )
-          : // Once loaded, show the solution
-          Column(
-              children: [
-                // Audio player controls (shown when audio is loaded)
-                if (_audioPath != null) _buildAudioPlayerControls(),
-                
-                // Scrollable content
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Show the captured image at the top so they can see what problem we solved
-                        Container(
-                          width: double.infinity,
-                          height: 200,
-                          decoration: BoxDecoration(
-                            color: AppColors.cardBackground,
-                            borderRadius: BorderRadius.circular(12),
-                            image: DecorationImage(
-                              image: FileImage(File(widget.imagePath)),
-                              fit: BoxFit.contain,
-                            ),
-                          ),
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Motivational Quote
+                  Text(
+                    _motivationalQuote,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  
+                  const SizedBox(height: 30),
+
+                  // Audio Button (Centered)
+                  if (_error.isEmpty && _solution.isNotEmpty)
+                    _buildCenteredAudioButton(),
+
+                  const SizedBox(height: 20),
+
+                  // Audio Player Controls (when audio is playing)
+                  if (_audioPath != null) _buildAudioPlayerControls(),
+
+                  const SizedBox(height: 30),
+
+                  // Error Box or Solution Steps
+                  if (_error.isNotEmpty)
+                    _buildErrorBox()
+                  else
+                    _buildStepsDropdown(),
+
+                  const SizedBox(height: 30),
+
+                  // Button to solve another problem
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        Navigator.pop(context);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        const SizedBox(height: 24),
-
-                        // Either show an error box or the actual solution
-                        if (_error.isNotEmpty)
-                          _buildErrorBox()
-                        else
-                          // Map each solution block to a widget and display them
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: _solution
-                                .map(SolutionParser.buildSolutionBlock)
-                                .toList(),
-                          ),
-
-                        const SizedBox(height: 24),
-
-                        // Button to go back and solve another problem
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: () {
-                              // Pop twice to go back to the home screen
-                              Navigator.pop(context);
-                              Navigator.pop(context);
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: const Text(
-                              'Solve Another Problem',
-                              style: TextStyle(fontSize: 16),
-                            ),
-                          ),
-                        ),
-                      ],
+                      ),
+                      child: const Text(
+                        'Solve Another Problem',
+                        style: TextStyle(fontSize: 16),
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
     );
   }
 
-  /// Builds the audio button for the app bar
-  Widget _buildAudioButton() {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
+  /// Builds the centered audio button
+  Widget _buildCenteredAudioButton() {
+    return Center(
       child: Container(
+        width: 200,
+        height: 60,
         decoration: BoxDecoration(
-          color: AppColors.primary.withOpacity(0.2),
-          borderRadius: BorderRadius.circular(12),
+          gradient: LinearGradient(
+            colors: [
+              AppColors.primary,
+              AppColors.primary.withOpacity(0.7),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(30),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withOpacity(0.3),
+              blurRadius: 15,
+              offset: const Offset(0, 5),
+            ),
+          ],
         ),
-        child: IconButton(
-          icon: _isGeneratingAudio
-              ? const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.primary,
-                  ),
-                )
-              : Icon(
-                  _isPlayingAudio ? Icons.pause : Icons.volume_up,
-                  color: AppColors.primary,
-                ),
-          onPressed: _isGeneratingAudio ? null : _toggleAudioPlayback,
-          tooltip: 'Listen to explanation',
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(30),
+            onTap: _isGeneratingAudio ? null : _toggleAudioPlayback,
+            child: Center(
+              child: _isGeneratingAudio
+                  ? const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        ),
+                        SizedBox(width: 12),
+                        Text(
+                          'Loading...',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          _isPlayingAudio ? Icons.pause : Icons.volume_up,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          _isPlayingAudio ? 'Pause' : 'Listen',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
         ),
       ),
     );
   }
 
-  /// Builds the audio player controls bar
+  /// Builds the audio player controls
   Widget _buildAudioPlayerControls() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
         color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.2),
@@ -299,82 +388,232 @@ class _SolutionScreenState extends State<SolutionScreen> {
       ),
       child: Column(
         children: [
-          Row(
-            children: [
-              // Play/Pause button
-              IconButton(
-                icon: Icon(
-                  _isPlayingAudio ? Icons.pause_circle_filled : Icons.play_circle_filled,
-                  size: 40,
-                  color: AppColors.primary,
+          // Progress bar
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 3,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+            ),
+            child: Slider(
+              value: _audioPosition.inSeconds.toDouble(),
+              max: _audioDuration.inSeconds.toDouble(),
+              activeColor: AppColors.primary,
+              inactiveColor: Colors.grey[700],
+              onChanged: (value) async {
+                final position = Duration(seconds: value.toInt());
+                await _audioPlayer.seek(position);
+              },
+            ),
+          ),
+          
+          // Time display
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  _formatDuration(_audioPosition),
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
                 ),
-                onPressed: _toggleAudioPlayback,
-              ),
-              
-              const SizedBox(width: 8),
-              
-              // Progress bar and time
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        trackHeight: 2,
-                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                        overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-                      ),
-                      child: Slider(
-                        value: _audioPosition.inSeconds.toDouble(),
-                        max: _audioDuration.inSeconds.toDouble(),
-                        activeColor: AppColors.primary,
-                        inactiveColor: Colors.grey[700],
-                        onChanged: (value) async {
-                          final position = Duration(seconds: value.toInt());
-                          await _audioPlayer.seek(position);
-                        },
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            _formatDuration(_audioPosition),
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
-                            ),
-                          ),
-                          Text(
-                            _formatDuration(_audioDuration),
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                Text(
+                  _formatDuration(_audioDuration),
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
                 ),
-              ),
-              
-              // Stop button
-              IconButton(
-                icon: const Icon(
-                  Icons.stop_circle_outlined,
-                  size: 32,
-                  color: Colors.white70,
-                ),
-                onPressed: _stopAudio,
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
     );
+  }
+
+  /// Builds the steps with dropdown/expansion
+  Widget _buildStepsDropdown() {
+    final steps = _groupIntoSteps();
+    
+    return Column(
+      children: List.generate(steps.length, (index) {
+        final step = steps[index];
+        final stepTitle = step['title'] as String;
+        final stepBlocks = step['blocks'] as List<SolutionBlock>;
+        final isExpanded = _expandedSteps[index] ?? false;
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          decoration: BoxDecoration(
+            color: AppColors.cardBackground,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isExpanded ? AppColors.primary : Colors.transparent,
+              width: 2,
+            ),
+          ),
+          child: Column(
+            children: [
+              // Step Header (clickable)
+              InkWell(
+                onTap: () {
+                  setState(() {
+                    _expandedSteps[index] = !isExpanded;
+                  });
+                },
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      // Expand/Collapse Icon
+                      Icon(
+                        isExpanded ? Icons.expand_less : Icons.expand_more,
+                        color: AppColors.primary,
+                        size: 28,
+                      ),
+                      const SizedBox(width: 12),
+                      
+                      // Step Title
+                      Expanded(
+                        child: Text(
+                          stepTitle,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      
+                      // Badge showing number of items
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${stepBlocks.length}',
+                          style: TextStyle(
+                            color: AppColors.primary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              
+              // Step Content (expandable)
+              if (isExpanded)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.2),
+                    borderRadius: const BorderRadius.only(
+                      bottomLeft: Radius.circular(12),
+                      bottomRight: Radius.circular(12),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: stepBlocks.map((block) {
+                      return _buildSolutionBlock(block);
+                    }).toList(),
+                  ),
+                ),
+            ],
+          ),
+        );
+      }),
+    );
+  }
+
+  /// Builds individual solution blocks
+  Widget _buildSolutionBlock(SolutionBlock block) {
+    switch (block.type) {
+      case 'paragraph':
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Text(
+            block.text,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 16,
+              height: 1.5,
+            ),
+          ),
+        );
+      
+      case 'equation':
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.primary.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: AppColors.primary.withOpacity(0.3),
+            ),
+          ),
+          child: Center(
+            child: Math.tex(
+              block.text,
+              textStyle: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+              ),
+            ),
+          ),
+        );
+      
+      case 'question':
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.amber.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: Colors.amber.withOpacity(0.3),
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.help_outline,
+                color: Colors.amber,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  block.text,
+                  style: const TextStyle(
+                    color: Colors.amber,
+                    fontSize: 15,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      
+      default:
+        return const SizedBox.shrink();
+    }
   }
 
   /// Formats duration to MM:SS
@@ -385,7 +624,7 @@ class _SolutionScreenState extends State<SolutionScreen> {
     return '$minutes:$seconds';
   }
 
-  /// Builds a red error box with helpful troubleshooting tips
+  /// Builds error box
   Widget _buildErrorBox() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -412,13 +651,11 @@ class _SolutionScreenState extends State<SolutionScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          // Show the actual error message
           Text(
             _error,
             style: const TextStyle(color: Colors.white),
           ),
           const SizedBox(height: 16),
-          // Give them some hints on what might be wrong
           const Text(
             'Please make sure you have\n'
             '1. Set your OpenAI API key\n'
