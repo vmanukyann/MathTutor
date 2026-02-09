@@ -18,6 +18,13 @@ class SolutionBlock {
       text: (json['text'] ?? '').toString().trim(),
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'type': type,
+      'text': text,
+    };
+  }
 }
 
 class OpenAIService {

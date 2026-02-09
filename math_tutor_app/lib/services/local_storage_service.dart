@@ -1,0 +1,125 @@
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'openai_service.dart';
+
+/// Service for local storage of problem history
+/// This provides offline access and faster loading
+class LocalStorageService {
+  static final LocalStorageService _instance = LocalStorageService._internal();
+  factory LocalStorageService() => _instance;
+  LocalStorageService._internal();
+
+  static const String _historyKey = 'problem_history';
+  static const String _userKey = 'current_user';
+
+  /// Save current user data locally
+  Future<void> saveUserData(Map<String, dynamic> userData) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_userKey, jsonEncode(userData));
+  }
+
+  /// Get current user data from local storage
+  Future<Map<String, dynamic>?> getUserData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userJson = prefs.getString(_userKey);
+    if (userJson == null) return null;
+    return jsonDecode(userJson) as Map<String, dynamic>;
+  }
+
+  /// Clear user data (on logout)
+  Future<void> clearUserData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_userKey);
+  }
+
+
+  /// Save problem to local history
+  Future<void> saveProblemLocally({
+    required String id,
+    required String imagePath,
+    required List<SolutionBlock> solution,
+    String? skillCategory,
+    String? skillName,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    // Get existing history
+    final historyJson = prefs.getString(_historyKey);
+    final List<dynamic> history = historyJson != null 
+        ? jsonDecode(historyJson) as List<dynamic>
+        : [];
+
+    // Create new problem entry
+    final problemData = {
+      'id': id,
+      'imagePath': imagePath,
+      'solution': solution.map((block) => block.toJson()).toList(),
+      'skillCategory': skillCategory,
+      'skillName': skillName,
+      'solvedAt': DateTime.now().toIso8601String(),
+    };
+
+    // Add to history
+    history.insert(0, problemData); // Add to beginning
+
+    // Save back to preferences
+    await prefs.setString(_historyKey, jsonEncode(history));
+  }
+
+  /// Get all problems from local history
+  Future<List<Map<String, dynamic>>> getLocalHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    final historyJson = prefs.getString(_historyKey);
+    
+    if (historyJson == null) return [];
+    
+    final List<dynamic> history = jsonDecode(historyJson) as List<dynamic>;
+    return history.cast<Map<String, dynamic>>();
+  }
+
+  /// Get problems solved today from local history
+  Future<List<Map<String, dynamic>>> getTodayProblemsLocally() async {
+    final allHistory = await getLocalHistory();
+    final now = DateTime.now();
+    final startOfDay = DateTime(now.year, now.month, now.day);
+
+    return allHistory.where((problem) {
+      final solvedAt = DateTime.parse(problem['solvedAt'] as String);
+      return solvedAt.isAfter(startOfDay);
+    }).toList();
+  }
+
+  /// Get a specific problem by ID
+  Future<Map<String, dynamic>?> getProblemById(String id) async {
+    final history = await getLocalHistory();
+    try {
+      return history.firstWhere((problem) => problem['id'] == id);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Delete a problem from local history
+  Future<void> deleteProblemLocally(String id) async {
+    final prefs = await SharedPreferences.getInstance();
+    final history = await getLocalHistory();
+    
+    history.removeWhere((problem) => problem['id'] == id);
+    
+    await prefs.setString(_historyKey, jsonEncode(history));
+  }
+
+  /// Clear all local history
+  Future<void> clearLocalHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_historyKey);
+  }
+
+
+  /// Parse solution blocks from JSON
+  List<SolutionBlock> parseSolutionBlocks(List<dynamic> solutionJson) {
+    return solutionJson
+        .map((block) => SolutionBlock.fromJson(block as Map<String, dynamic>))
+        .toList();
+  }
+}

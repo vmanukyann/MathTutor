@@ -1,17 +1,52 @@
 import 'package:flutter/material.dart';
 import '../constants/colors.dart';
+import '../services/supabase_service.dart';
+import '../services/local_storage_service.dart';
+import 'login_screen.dart';
+import 'package:camera/camera.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({Key? key}) : super(key: key);
+  final List<CameraDescription> cameras;
+  
+  const SettingsScreen({Key? key, required this.cameras}) : super(key: key);
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  final _supabaseService = SupabaseService();
+  final _localStorage = LocalStorageService();
+  
   bool _notificationsEnabled = true;
   bool _darkModeEnabled = true;
   String _selectedLanguage = 'English';
+  
+  String _userName = '';
+  String _userEmail = '';
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserProfile();
+  }
+
+  Future<void> _loadUserProfile() async {
+    try {
+      final profile = await _supabaseService.getUserProfile();
+      
+      setState(() {
+        _userName = profile?['full_name'] ?? 'Student';
+        _userEmail = profile?['email'] ?? '';
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,6 +59,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // User Profile Card
+          if (!_isLoading)
+            Container(
+              padding: const EdgeInsets.all(20),
+              margin: const EdgeInsets.only(bottom: 24),
+              decoration: BoxDecoration(
+                color: AppColors.cardBackground,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: AppColors.primary.withOpacity(0.2),
+                  width: 1,
+                ),
+              ),
+              child: Column(
+                children: [
+                  // Avatar
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        _userName.isNotEmpty ? _userName[0].toUpperCase() : 'S',
+                        style: const TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Name
+                  Text(
+                    _userName,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textWhite,
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 4),
+                  
+                  // Email
+                  Text(
+                    _userEmail,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: AppColors.textGrey.withOpacity(0.7),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          
           const Text(
             'General',
             style: TextStyle(
@@ -70,6 +166,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _showLanguageDialog();
             },
           ),
+          
           const SizedBox(height: 24),
           const Text(
             'About',
@@ -104,6 +201,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               // TODO: Open terms of service
             },
           ),
+          
           const SizedBox(height: 24),
           const Text(
             'Support',
@@ -132,13 +230,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
               // TODO: Open feedback form
             },
           ),
+          
           const SizedBox(height: 32),
+          
+          // Logout button
           Center(
             child: TextButton.icon(
-              onPressed: () {
-                _showLogoutDialog();
-              },
+              onPressed: _handleLogout,
               icon: const Icon(Icons.logout, color: Colors.red),
+              label: const Text(
+                'Sign Out',
+                style: TextStyle(color: Colors.red, fontSize: 16),
+              ),
+            ),
+          ),
+          
+          const SizedBox(height: 16),
+          
+          // Clear data button
+          Center(
+            child: TextButton.icon(
+              onPressed: _showClearDataDialog,
+              icon: const Icon(Icons.delete_forever, color: Colors.red),
               label: const Text(
                 'Clear All Data',
                 style: TextStyle(color: Colors.red, fontSize: 16),
@@ -220,7 +333,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showLogoutDialog() {
+  Future<void> _handleLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.cardBackground,
+        title: const Text('Sign Out?', style: TextStyle(color: AppColors.textWhite)),
+        content: const Text(
+          'Are you sure you want to sign out?',
+          style: TextStyle(color: AppColors.textGrey),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.textGrey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Sign Out', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      // Sign out from Supabase
+      await _supabaseService.signOut();
+      
+      // Clear local user data (but keep history)
+      await _localStorage.clearUserData();
+      
+      if (mounted) {
+        // Navigate back to login screen
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (context) => LoginScreen(cameras: widget.cameras),
+          ),
+          (route) => false,
+        );
+      }
+    }
+  }
+
+  void _showClearDataDialog() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -236,15 +391,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: const Text('Cancel', style: TextStyle(color: AppColors.textGrey)),
           ),
           TextButton(
-            onPressed: () {
-              // TODO: Clear all data
+            onPressed: () async {
+              // Clear local history
+              await _localStorage.clearLocalHistory();
+              
+              // Clear Supabase history if logged in
+              if (_supabaseService.isLoggedIn) {
+                try {
+                  await _supabaseService.clearAllHistory();
+                } catch (e) {
+                  // Silently fail
+                }
+              }
+              
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('All data cleared'),
-                  backgroundColor: AppColors.primary,
-                ),
-              );
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('All data cleared'),
+                    backgroundColor: AppColors.primary,
+                  ),
+                );
+              }
             },
             child: const Text('Clear', style: TextStyle(color: Colors.red)),
           ),

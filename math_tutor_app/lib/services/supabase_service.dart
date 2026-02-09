@@ -1,0 +1,331 @@
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../constants/supabase.dart';
+import 'openai_service.dart';
+
+/// Service class for interacting with Supabase backend
+class SupabaseService {
+  static final SupabaseService _instance = SupabaseService._internal();
+  factory SupabaseService() => _instance;
+  SupabaseService._internal();
+
+  /// Get the Supabase client instance
+  SupabaseClient get client => Supabase.instance.client;
+
+  /// Get the current user
+  User? get currentUser => client.auth.currentUser;
+
+  /// Check if user is logged in
+  bool get isLoggedIn => currentUser != null;
+
+  /// Initialize Supabase (call this in main.dart)
+  static Future<void> initialize() async {
+    await Supabase.initialize(
+      url: SUPABASE_URL,
+      anonKey: SUPABASE_ANON_KEY,
+    );
+  }
+
+  // ============== AUTHENTICATION ==============
+
+  /// Sign up a new user with school email
+  Future<AuthResponse> signUp({
+    required String email,
+    required String password,
+    required String fullName,
+  }) async {
+    // Validate school email
+    if (!isValidSchoolEmail(email)) {
+      throw Exception(
+        'Please use a valid school email address (.k12.in.us or .edu)',
+      );
+    }
+
+    // Sign up the user
+    final response = await client.auth.signUp(
+      email: email,
+      password: password,
+    );
+
+    // Create user profile
+    if (response.user != null) {
+      await client.from('profiles').insert({
+        'id': response.user!.id,
+        'email': email,
+        'full_name': fullName,
+        'school_email': email,
+      });
+    }
+
+    return response;
+  }
+
+  /// Sign in with email and password
+  Future<AuthResponse> signIn({
+    required String email,
+    required String password,
+  }) async {
+    return await client.auth.signInWithPassword(
+      email: email,
+      password: password,
+    );
+  }
+
+  /// Sign out the current user
+  Future<void> signOut() async {
+    await client.auth.signOut();
+  }
+
+  /// Send password reset email
+  Future<void> resetPassword(String email) async {
+    await client.auth.resetPasswordForEmail(email);
+  }
+
+  // ============== USER PROFILE ==============
+
+  /// Get user profile data
+  Future<Map<String, dynamic>?> getUserProfile() async {
+    if (currentUser == null) return null;
+
+    final response = await client
+        .from('profiles')
+        .select()
+        .eq('id', currentUser!.id)
+        .single();
+
+    return response;
+  }
+
+  /// Update user profile
+  Future<void> updateProfile({
+    String? fullName,
+  }) async {
+    if (currentUser == null) throw Exception('No user logged in');
+
+    final updates = <String, dynamic>{};
+    if (fullName != null) updates['full_name'] = fullName;
+
+    if (updates.isNotEmpty) {
+      await client
+          .from('profiles')
+          .update(updates)
+          .eq('id', currentUser!.id);
+    }
+  }
+
+  // ============== SKILLS TRACKING ==============
+
+  /// Get all skills for the current user
+  Future<List<Map<String, dynamic>>> getUserSkills() async {
+    if (currentUser == null) return [];
+
+    final response = await client
+        .from('skills')
+        .select()
+        .eq('user_id', currentUser!.id)
+        .order('last_practiced', ascending: false);
+
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  /// Get top skills by percentage (for home screen display)
+  Future<List<Map<String, dynamic>>> getTopSkills({int limit = 2}) async {
+    final skills = await getUserSkills();
+
+    // Calculate percentage for each skill
+    final skillsWithPercentage = skills.map((skill) {
+      final attempted = skill['problems_attempted'] as int;
+      final solved = skill['problems_solved'] as int;
+      final percentage = attempted > 0 ? (solved / attempted * 100).round() : 0;
+
+      return {
+        ...skill,
+        'percentage': percentage,
+      };
+    }).toList();
+
+    // Sort by last practiced (most recent first)
+    skillsWithPercentage.sort((a, b) {
+      final aDate = DateTime.parse(a['last_practiced'] as String);
+      final bDate = DateTime.parse(b['last_practiced'] as String);
+      return bDate.compareTo(aDate);
+    });
+
+    // Return top N skills
+    return skillsWithPercentage.take(limit).toList();
+  }
+
+  /// Update or create a skill record
+  Future<void> updateSkill({
+    required String skillName,
+    required String skillCategory,
+    required bool wasSolved,
+  }) async {
+    if (currentUser == null) throw Exception('No user logged in');
+
+    // Try to get existing skill
+    final existing = await client
+        .from('skills')
+        .select()
+        .eq('user_id', currentUser!.id)
+        .eq('skill_name', skillName)
+        .maybeSingle();
+
+    if (existing != null) {
+      // Update existing skill
+      await client.from('skills').update({
+        'problems_attempted': (existing['problems_attempted'] as int) + 1,
+        'problems_solved': wasSolved
+            ? (existing['problems_solved'] as int) + 1
+            : existing['problems_solved'],
+        'last_practiced': DateTime.now().toIso8601String(),
+      }).eq('id', existing['id']);
+    } else {
+      // Create new skill
+      await client.from('skills').insert({
+        'user_id': currentUser!.id,
+        'skill_name': skillName,
+        'skill_category': skillCategory,
+        'problems_attempted': 1,
+        'problems_solved': wasSolved ? 1 : 0,
+        'last_practiced': DateTime.now().toIso8601String(),
+      });
+    }
+  }
+
+  // ============== PROBLEM HISTORY ==============
+
+  /// Save a solved problem to history
+  Future<void> saveProblemToHistory({
+    required String imagePath,
+    required List<SolutionBlock> solution,
+    String? skillCategory,
+    String? skillName,
+  }) async {
+    if (currentUser == null) throw Exception('No user logged in');
+
+    // Convert solution blocks to JSON
+    final solutionJson = solution.map((block) => block.toJson()).toList();
+
+    await client.from('problem_history').insert({
+      'user_id': currentUser!.id,
+      'image_path': imagePath,
+      'solution_data': solutionJson,
+      'skill_category': skillCategory,
+      'skill_name': skillName,
+      'solved_at': DateTime.now().toIso8601String(),
+    });
+
+    // Update skill if provided
+    if (skillName != null && skillCategory != null) {
+      await updateSkill(
+        skillName: skillName,
+        skillCategory: skillCategory,
+        wasSolved: true,
+      );
+    }
+  }
+
+  /// Get problem history for the current user
+  /// Can filter by date
+  Future<List<Map<String, dynamic>>> getProblemHistory({
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    if (currentUser == null) return [];
+
+    final response = await client
+        .from('problem_history')
+        .select()
+        .eq('user_id', currentUser!.id)
+        .order('solved_at', ascending: false);
+
+    List<Map<String, dynamic>> results = List<Map<String, dynamic>>.from(response);
+
+    // Filter by date in Dart if needed
+    if (startDate != null || endDate != null) {
+      results = results.where((problem) {
+        final solvedAt = DateTime.parse(problem['solved_at'] as String);
+        
+        if (startDate != null && solvedAt.isBefore(startDate)) {
+          return false;
+        }
+        if (endDate != null && solvedAt.isAfter(endDate)) {
+          return false;
+        }
+        return true;
+      }).toList();
+    }
+
+    return results;
+  }
+
+  /// Get problems solved today
+  Future<List<Map<String, dynamic>>> getTodayProblems() async {
+    final now = DateTime.now();
+    final startOfDay = DateTime(now.year, now.month, now.day);
+    final endOfDay = startOfDay.add(const Duration(days: 1));
+
+    return await getProblemHistory(
+      startDate: startOfDay,
+      endDate: endOfDay,
+    );
+  }
+
+  /// Delete a problem from history
+  Future<void> deleteProblem(String problemId) async {
+    if (currentUser == null) throw Exception('No user logged in');
+
+    await client
+        .from('problem_history')
+        .delete()
+        .eq('id', problemId);
+  }
+
+  /// Delete all history
+  Future<void> clearAllHistory() async {
+    if (currentUser == null) throw Exception('No user logged in');
+
+    await client
+        .from('problem_history')
+        .delete()
+        .eq('user_id', currentUser!.id);
+  }
+
+  // ============== STATISTICS ==============
+
+  /// Get user statistics
+  Future<Map<String, dynamic>> getUserStats() async {
+    if (currentUser == null) {
+      return {
+        'total_problems': 0,
+        'problems_today': 0,
+        'problems_this_week': 0,
+        'top_skill': null,
+      };
+    }
+
+    // Get all history
+    final allHistory = await getProblemHistory();
+
+    // Get today's problems
+    final todayProblems = await getTodayProblems();
+
+    // Get this week's problems
+    final now = DateTime.now();
+    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+    final weekProblems = await getProblemHistory(
+      startDate: DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day),
+    );
+
+    // Get top skill
+    final skills = await getTopSkills(limit: 1);
+    final topSkill = skills.isNotEmpty ? skills.first : null;
+
+    return {
+      'total_problems': allHistory.length,
+      'problems_today': todayProblems.length,
+      'problems_this_week': weekProblems.length,
+      'top_skill': topSkill,
+    };
+  }
+}

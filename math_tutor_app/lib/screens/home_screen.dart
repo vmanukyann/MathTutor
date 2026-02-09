@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import '../constants/colors.dart';
+import '../services/supabase_service.dart';
 import 'scan_screen.dart';
 
-// Main home screen widget - shows the landing page with the scan button
+// Main home screen widget - shows personalized landing page
 class HomeScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
   
@@ -14,7 +15,14 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
-  // Controllers for the pulsing and floating animations
+  final _supabaseService = SupabaseService();
+  
+  // User data
+  String _userName = '';
+  List<Map<String, dynamic>> _topSkills = [];
+  bool _isLoading = true;
+  
+  // Controllers for animations
   late AnimationController _pulseController;
   late AnimationController _floatController;
   late Animation<double> _pulseAnimation;
@@ -24,7 +32,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     
-    // Setup pulsing animation for the scan button - makes it breathe a bit
+    // Setup animations
     _pulseController = AnimationController(
       duration: const Duration(seconds: 2),
       vsync: this,
@@ -34,7 +42,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
-    // Floating animation for the background math symbols
     _floatController = AnimationController(
       duration: const Duration(seconds: 3),
       vsync: this,
@@ -43,14 +50,37 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _floatAnimation = Tween<double>(begin: -10, end: 10).animate(
       CurvedAnimation(parent: _floatController, curve: Curves.easeInOut),
     );
+    
+    // Load user data
+    _loadUserData();
   }
 
   @override
   void dispose() {
-    // Clean up animation controllers to prevent memory leaks
     _pulseController.dispose();
     _floatController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadUserData() async {
+    try {
+      // Get user profile
+      final profile = await _supabaseService.getUserProfile();
+      
+      // Get top skills
+      final skills = await _supabaseService.getTopSkills(limit: 2);
+      
+      setState(() {
+        _userName = profile?['full_name'] ?? 'Student';
+        _topSkills = skills;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _userName = 'Student';
+        _isLoading = false;
+      });
+    }
   }
 
   @override
@@ -58,27 +88,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return Scaffold(
       body: Stack(
         children: [
-          // Dark gradient background - gives that sleek modern look
-          AnimatedBuilder(
-            animation: _floatController,
-            builder: (context, child) {
-              return Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Color(0xFF000000),
-                      Color(0xFF0A0A0A),
-                      Color(0xFF000000),
-                    ],
-                  ),
-                ),
-              );
-            },
+          // Dark gradient background
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFF000000),
+                  Color(0xFF0A0A0A),
+                  Color(0xFF000000),
+                ],
+              ),
+            ),
           ),
           
-          // Background floating math symbols - just for aesthetics
+          // Floating math symbols
           ...List.generate(5, (index) {
             return AnimatedBuilder(
               animation: _floatAnimation,
@@ -106,13 +131,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           SafeArea(
             child: Column(
               children: [
-                // Top header with logo and history button
+                // Top header
                 Padding(
                   padding: const EdgeInsets.all(20),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // App icon on the left
+                      // App icon
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
@@ -123,7 +148,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           color: AppColors.primary, size: 24),
                       ),
                       
-                      // App name in the center
+                      // App name
                       const Text(
                         'MathTutor',
                         style: TextStyle(
@@ -133,12 +158,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         ),
                       ),
                       
-                      // History button on the right
+                      // Profile/Settings button
                       IconButton(
-                        icon: const Icon(Icons.history, 
+                        icon: const Icon(Icons.person, 
                           color: AppColors.textGrey),
                         onPressed: () {
-                          // TODO: navigate to history screen
+                          // Navigate to settings (handled by bottom nav)
                         },
                       ),
                     ],
@@ -152,9 +177,34 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Column(
                     children: [
+                      // Personalized greeting
+                      _isLoading
+                          ? const SizedBox(height: 40)
+                          : Column(
+                              children: [
+                                Text(
+                                  'Hi, $_userName',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.primary,
+                                    letterSpacing: -0.5,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                
+                                // Skills progress (if available)
+                                if (_topSkills.isNotEmpty) ...[
+                                  _buildSkillsProgress(),
+                                  const SizedBox(height: 24),
+                                ],
+                              ],
+                            ),
+                      
                       // Main headline
                       const Text(
-                        'Solve any problem',
+                        'Ready to learn?',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 40,
@@ -167,9 +217,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       
                       const SizedBox(height: 12),
                       
-                      // Subtitle/description
+                      // Subtitle
                       Text(
-                        'Scan, solve, and understand math instantly',
+                        'Scan any problem to get started',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 17,
@@ -181,55 +231,57 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       
                       const SizedBox(height: 60),
 
-                      // Big circular scan button - the main CTA
-                      GestureDetector(
-                        onTap: () {
-                          // Navigate to camera screen when tapped
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => 
-                                ScanScreen(cameras: widget.cameras),
-                            ),
-                          );
-                        },
-                        child: Container(
-                          width: 200,
-                          height: 200,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: AppColors.primary,
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.primary.withOpacity(0.3),
-                                blurRadius: 40,
-                                spreadRadius: 0,
+                      // Big circular scan button
+                      ScaleTransition(
+                        scale: _pulseAnimation,
+                        child: GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => 
+                                  ScanScreen(cameras: widget.cameras),
                               ),
-                            ],
-                          ),
-                          child: const Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.camera_alt_rounded, 
-                                size: 56, color: Colors.white),
-                              SizedBox(height: 12),
-                              Text(
-                                'Scan',
-                                style: TextStyle(
-                                  fontSize: 19,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white,
-                                  letterSpacing: -0.3,
+                            );
+                          },
+                          child: Container(
+                            width: 200,
+                            height: 200,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: AppColors.primary,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.primary.withOpacity(0.3),
+                                  blurRadius: 40,
+                                  spreadRadius: 0,
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
+                            child: const Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.camera_alt_rounded, 
+                                  size: 56, color: Colors.white),
+                                SizedBox(height: 12),
+                                Text(
+                                  'Scan',
+                                  style: TextStyle(
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                    letterSpacing: -0.3,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                       
                       const SizedBox(height: 50),
 
-                      // Secondary action buttons at the bottom
+                      // Secondary action buttons
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -263,9 +315,85 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       ),
     );
   }
+
+  /// Builds the skills progress widget
+  Widget _buildSkillsProgress() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.primary.withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Currently working on:',
+            style: TextStyle(
+              fontSize: 14,
+              color: AppColors.textGrey.withOpacity(0.7),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...List.generate(_topSkills.length, (index) {
+            final skill = _topSkills[index];
+            final percentage = skill['percentage'] as int;
+            final skillName = skill['skill_category'] as String;
+            
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  // Percentage badge
+                  Container(
+                    width: 50,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '$percentage%',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: AppColors.primary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  
+                  // Skill name
+                  Expanded(
+                    child: Text(
+                      skillName,
+                      style: const TextStyle(
+                        color: AppColors.textWhite,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
 }
 
-// Reusable button widget for the quick actions (Type & Upload)
+// Quick action button widget
 class _QuickActionButton extends StatelessWidget {
   final IconData icon;
   final String label;

@@ -25,7 +25,7 @@ class _MainNavigationState extends State<MainNavigation> {
     _screens = [
       HomeScreen(cameras: widget.cameras),
       const HistoryScreen(),
-      const SettingsScreen(),
+      SettingsScreen(cameras: widget.cameras), // Pass cameras to settings
     ];
   }
 
