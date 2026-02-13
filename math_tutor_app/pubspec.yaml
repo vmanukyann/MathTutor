@@ -18,8 +18,7 @@ dependencies:
   flutter_math_fork: ^0.7.2
   audioplayers: ^5.2.1
   cupertino_icons: ^1.0.8
-  
-  # New dependencies for authentication and database
+  image_picker: ^1.0.7
   supabase_flutter: ^2.5.6
   firebase_core: ^3.3.0
   firebase_auth: ^5.1.4

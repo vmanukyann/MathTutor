@@ -15,7 +15,7 @@ class ScanScreen extends StatefulWidget {
 
 class _ScanScreenState extends State<ScanScreen> {
   CameraController? _controller;
-  bool _isProcessing = false; // Prevent multiple captures at once
+  bool _isProcessing = false;
 
   @override
   void initState() {
@@ -30,18 +30,17 @@ class _ScanScreenState extends State<ScanScreen> {
     // Use the first camera (usually the back camera)
     _controller = CameraController(
       widget.cameras[0],
-      ResolutionPreset.high, // High quality for better text recognition
+      ResolutionPreset.high,
     );
 
     await _controller!.initialize();
     if (mounted) {
-      setState(() {}); // Rebuild to show the camera preview
+      setState(() {});
     }
   }
 
   @override
   void dispose() {
-    // Clean up the camera controller when leaving the screen
     _controller?.dispose();
     super.dispose();
   }
@@ -72,9 +71,11 @@ class _ScanScreenState extends State<ScanScreen> {
     } catch (e) {
       print('Error taking picture: $e');
     } finally {
-      setState(() {
-        _isProcessing = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+        });
+      }
     }
   }
 
@@ -98,15 +99,6 @@ class _ScanScreenState extends State<ScanScreen> {
           icon: const Icon(Icons.close),
           onPressed: () => Navigator.pop(context),
         ),
-        actions: [
-          // Flash button - not implemented yet but left for future
-          IconButton(
-            icon: const Icon(Icons.flash_off),
-            onPressed: () {
-              // TODO: toggle flash
-            },
-          ),
-        ],
       ),
       body: Stack(
         children: [
@@ -115,34 +107,75 @@ class _ScanScreenState extends State<ScanScreen> {
             child: CameraPreview(_controller!),
           ),
           
-          // Focus frame overlay - helps users align the problem
-          Center(
-            child: Container(
-              width: MediaQuery.of(context).size.width * 0.8,
-              height: 200,
-              decoration: BoxDecoration(
-                border: Border.all(color: AppColors.primary, width: 3),
-                borderRadius: BorderRadius.circular(12),
-              ),
+          // Dark overlay with transparent square cutout
+          Positioned.fill(
+            child: CustomPaint(
+              painter: ScanOverlayPainter(),
             ),
+          ),
+          
+          // Corner brackets overlay
+          Center(
+            child: _buildCornerBrackets(),
           ),
           
           // Instruction text
           const Positioned(
-            bottom: 150,
+            top: 100,
             left: 0,
             right: 0,
             child: Column(
               children: [
                 Text(
-                  'Align problem within the',
-                  style: TextStyle(color: Colors.white70, fontSize: 16),
+                  'Position the math problem',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black54,
+                        blurRadius: 10,
+                      ),
+                    ],
+                  ),
                 ),
+                SizedBox(height: 4),
                 Text(
-                  'frame',
-                  style: TextStyle(color: Colors.white70, fontSize: 16, fontWeight: FontWeight.bold),
+                  'within the frame',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 16,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black54,
+                        blurRadius: 10,
+                      ),
+                    ],
+                  ),
                 ),
               ],
+            ),
+          ),
+          
+          // Bottom instruction
+          Positioned(
+            bottom: 150,
+            left: 0,
+            right: 0,
+            child: Text(
+              'Only content inside the box will be scanned',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.9),
+                fontSize: 14,
+                shadows: const [
+                  Shadow(
+                    color: Colors.black54,
+                    blurRadius: 10,
+                  ),
+                ],
+              ),
             ),
           ),
           
@@ -162,6 +195,13 @@ class _ScanScreenState extends State<ScanScreen> {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(color: Colors.white, width: 4),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.3),
+                          blurRadius: 10,
+                          spreadRadius: 2,
+                        ),
+                      ],
                     ),
                     child: Center(
                       child: Container(
@@ -171,6 +211,15 @@ class _ScanScreenState extends State<ScanScreen> {
                           color: Colors.white,
                           shape: BoxShape.circle,
                         ),
+                        child: _isProcessing
+                            ? const Padding(
+                                padding: EdgeInsets.all(15),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 3,
+                                  color: AppColors.primary,
+                                ),
+                              )
+                            : null,
                       ),
                     ),
                   ),
@@ -182,4 +231,177 @@ class _ScanScreenState extends State<ScanScreen> {
       ),
     );
   }
+
+  /// Builds the corner bracket frame
+  Widget _buildCornerBrackets() {
+    final screenSize = MediaQuery.of(context).size;
+    final frameWidth = screenSize.width * 0.85;
+    final frameHeight = frameWidth * 0.75; // 4:3 aspect ratio
+    final cornerLength = 40.0;
+    final cornerThickness = 4.0;
+
+    return SizedBox(
+      width: frameWidth,
+      height: frameHeight,
+      child: Stack(
+        children: [
+          // Top-left corner
+          Positioned(
+            top: 0,
+            left: 0,
+            child: _buildCorner(
+              cornerLength: cornerLength,
+              thickness: cornerThickness,
+              isTopLeft: true,
+            ),
+          ),
+          // Top-right corner
+          Positioned(
+            top: 0,
+            right: 0,
+            child: _buildCorner(
+              cornerLength: cornerLength,
+              thickness: cornerThickness,
+              isTopRight: true,
+            ),
+          ),
+          // Bottom-left corner
+          Positioned(
+            bottom: 0,
+            left: 0,
+            child: _buildCorner(
+              cornerLength: cornerLength,
+              thickness: cornerThickness,
+              isBottomLeft: true,
+            ),
+          ),
+          // Bottom-right corner
+          Positioned(
+            bottom: 0,
+            right: 0,
+            child: _buildCorner(
+              cornerLength: cornerLength,
+              thickness: cornerThickness,
+              isBottomRight: true,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Builds a single corner bracket
+  Widget _buildCorner({
+    required double cornerLength,
+    required double thickness,
+    bool isTopLeft = false,
+    bool isTopRight = false,
+    bool isBottomLeft = false,
+    bool isBottomRight = false,
+  }) {
+    return CustomPaint(
+      size: Size(cornerLength, cornerLength),
+      painter: CornerPainter(
+        color: AppColors.primary,
+        thickness: thickness,
+        isTopLeft: isTopLeft,
+        isTopRight: isTopRight,
+        isBottomLeft: isBottomLeft,
+        isBottomRight: isBottomRight,
+      ),
+    );
+  }
+}
+
+/// Custom painter for the corner brackets
+class CornerPainter extends CustomPainter {
+  final Color color;
+  final double thickness;
+  final bool isTopLeft;
+  final bool isTopRight;
+  final bool isBottomLeft;
+  final bool isBottomRight;
+
+  CornerPainter({
+    required this.color,
+    required this.thickness,
+    this.isTopLeft = false,
+    this.isTopRight = false,
+    this.isBottomLeft = false,
+    this.isBottomRight = false,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = thickness
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final path = Path();
+
+    if (isTopLeft) {
+      // Top-left corner: L shape
+      path.moveTo(size.width, 0);
+      path.lineTo(0, 0);
+      path.lineTo(0, size.height);
+    } else if (isTopRight) {
+      // Top-right corner: mirrored L
+      path.moveTo(0, 0);
+      path.lineTo(size.width, 0);
+      path.lineTo(size.width, size.height);
+    } else if (isBottomLeft) {
+      // Bottom-left corner: upside-down L
+      path.moveTo(0, 0);
+      path.lineTo(0, size.height);
+      path.lineTo(size.width, size.height);
+    } else if (isBottomRight) {
+      // Bottom-right corner: upside-down mirrored L
+      path.moveTo(size.width, 0);
+      path.lineTo(size.width, size.height);
+      path.lineTo(0, size.height);
+    }
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// Custom painter for the dark overlay with transparent cutout
+class ScanOverlayPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final frameWidth = size.width * 0.85;
+    final frameHeight = frameWidth * 0.75; // 4:3 aspect ratio
+    
+    final left = (size.width - frameWidth) / 2;
+    final top = (size.height - frameHeight) / 2;
+    
+    final scanRect = Rect.fromLTWH(left, top, frameWidth, frameHeight);
+    
+    final paint = Paint()
+      ..color = Colors.black.withOpacity(0.6);
+    
+    // Draw dark overlay
+    final path = Path()
+      ..addRect(Rect.fromLTWH(0, 0, size.width, size.height));
+    
+    // Cut out the scan area
+    path.addRRect(
+      RRect.fromRectAndRadius(
+        scanRect,
+        const Radius.circular(12),
+      ),
+    );
+    
+    path.fillType = PathFillType.evenOdd;
+    
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

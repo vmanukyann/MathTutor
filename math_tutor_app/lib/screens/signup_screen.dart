@@ -55,18 +55,15 @@ class _SignupScreenState extends State<SignupScreen> {
         // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Account created successfully! You can now sign in.'),
+            content: Text('Account created! Please check your email to verify, then sign in.'),
             backgroundColor: AppColors.primary,
-            duration: Duration(seconds: 3),
+            duration: Duration(seconds: 4),
           ),
         );
 
-        // Navigate to main app
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (context) => MainNavigation(cameras: widget.cameras),
-          ),
-        );
+        // Go back to login screen instead of entering app
+        // This handles email confirmation properly
+        Navigator.of(context).pop();
       }
     } catch (e) {
       setState(() {

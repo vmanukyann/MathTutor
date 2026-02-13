@@ -14,7 +14,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   final _supabaseService = SupabaseService();
   
   // User data
@@ -27,6 +27,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late AnimationController _floatController;
   late Animation<double> _pulseAnimation;
   late Animation<double> _floatAnimation;
+
+  @override
+  bool get wantKeepAlive => false; // Don't keep state alive, always refresh
 
   @override
   void initState() {
@@ -62,29 +65,55 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
+  // Add this method to refresh data when returning to screen
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _loadUserData();
+  }
+
   Future<void> _loadUserData() async {
     try {
-      // Get user profile
+      // DEBUG: Check auth state
+      final user = _supabaseService.currentUser;
+      final session = _supabaseService.currentSession;
+      
+      print('=== HOME SCREEN DEBUG ===');
+      print('uid=${user?.id} session=${session != null}');
+      
+      // Get user profile - force fresh data
       final profile = await _supabaseService.getUserProfile();
+      print('profile=$profile');
       
       // Get top skills
       final skills = await _supabaseService.getTopSkills(limit: 2);
       
-      setState(() {
-        _userName = profile?['full_name'] ?? 'Student';
-        _topSkills = skills;
-        _isLoading = false;
-      });
+      // Try to get name from auth metadata as fallback
+      final metaName = user?.userMetadata?['full_name'] as String?;
+      print('metaName=$metaName');
+      
+      if (mounted) {
+        setState(() {
+          _userName = (profile?['full_name'] as String?) ?? metaName ?? 'Student';
+          _topSkills = skills;
+          _isLoading = false;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _userName = 'Student';
-        _isLoading = false;
-      });
+      print('Error loading user data: $e');
+      if (mounted) {
+        setState(() {
+          _userName = 'Student';
+          _isLoading = false;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
+    
     return Scaffold(
       body: Stack(
         children: [

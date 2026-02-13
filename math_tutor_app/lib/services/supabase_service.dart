@@ -14,8 +14,11 @@ class SupabaseService {
   /// Get the current user
   User? get currentUser => client.auth.currentUser;
 
+  /// Get the current session
+  Session? get currentSession => client.auth.currentSession;
+
   /// Check if user is logged in
-  bool get isLoggedIn => currentUser != null;
+  bool get isLoggedIn => currentSession != null;
 
   /// Initialize Supabase (call this in main.dart)
   static Future<void> initialize() async {
@@ -40,21 +43,17 @@ class SupabaseService {
       );
     }
 
-    // Sign up the user
+    // Sign up the user with full_name in metadata
+    // The database trigger will automatically create the profile row
     final response = await client.auth.signUp(
       email: email,
       password: password,
+      data: {'full_name': fullName}, // This is used by the database trigger
     );
 
-    // Create user profile
-    if (response.user != null) {
-      await client.from('profiles').insert({
-        'id': response.user!.id,
-        'email': email,
-        'full_name': fullName,
-        'school_email': email,
-      });
-    }
+    // Note: We don't manually insert into profiles anymore.
+    // The database trigger (handle_new_user) does it automatically
+    // when the user is created in auth.users. This avoids RLS issues.
 
     return response;
   }
@@ -90,7 +89,7 @@ class SupabaseService {
         .from('profiles')
         .select()
         .eq('id', currentUser!.id)
-        .single();
+        .maybeSingle();
 
     return response;
   }
