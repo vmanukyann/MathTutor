@@ -108,9 +108,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        appBar: null,
-        body: Center(
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        body: const Center(
           child: CircularProgressIndicator(color: AppColors.primary),
         ),
       );
@@ -118,10 +118,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
     if (_allHistory.isEmpty) {
       return Scaffold(
+        backgroundColor: AppColors.background,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
-          title: const Text('History', style: TextStyle(fontWeight: FontWeight.bold)),
+          title: const Text(
+            'History',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
         ),
         body: Center(
           child: Column(
@@ -130,7 +137,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               Icon(
                 Icons.history,
                 size: 100,
-                color: AppColors.textGrey.withOpacity(0.3),
+                color: Colors.white.withOpacity(0.2),
               ),
               const SizedBox(height: 24),
               const Text(
@@ -138,7 +145,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
-                  color: AppColors.textWhite,
+                  color: Colors.white,
                 ),
               ),
               const SizedBox(height: 12),
@@ -149,7 +156,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 16,
-                    color: AppColors.textGrey.withOpacity(0.7),
+                    color: Colors.white.withOpacity(0.6),
                   ),
                 ),
               ),
@@ -162,13 +169,21 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final groupedHistory = _groupByDate();
 
     return Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text('History', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'History',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
         actions: [
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
+            icon: const Icon(Icons.more_vert, color: Colors.white),
+            color: AppColors.cardBackground,
             onSelected: (value) {
               if (value == 'clear') {
                 _showClearHistoryDialog();
@@ -191,8 +206,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: _loadHistory,
+        color: AppColors.primary,
+        backgroundColor: AppColors.cardBackground,
         child: ListView.builder(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(20),
           itemCount: groupedHistory.length,
           itemBuilder: (context, index) {
             final groupKey = groupedHistory.keys.elementAt(index);
@@ -203,13 +220,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
               children: [
                 // Date header
                 Padding(
-                  padding: EdgeInsets.only(left: 4, bottom: 12, top: index == 0 ? 0 : 16),
+                  padding: EdgeInsets.only(
+                    left: 4,
+                    bottom: 16,
+                    top: index == 0 ? 0 : 24,
+                  ),
                   child: Text(
                     groupKey,
-                    style: TextStyle(
-                      fontSize: 16,
+                    style: const TextStyle(
+                      fontSize: 20,
                       fontWeight: FontWeight.bold,
-                      color: AppColors.primary,
+                      color: Colors.white,
                     ),
                   ),
                 ),
@@ -267,14 +288,21 @@ class _HistoryScreenState extends State<HistoryScreen> {
         );
       },
       child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
+        margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
           color: AppColors.cardBackground,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: Colors.white.withOpacity(0.05),
-            width: 1,
+            color: Colors.transparent,
+            width: 2,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Row(
           children: [
@@ -285,17 +313,20 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 bottomLeft: Radius.circular(12),
               ),
               child: Container(
-                width: 80,
-                height: 80,
-                color: Colors.black,
+                width: 90,
+                height: 90,
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.3),
+                ),
                 child: File(imagePath).existsSync()
                     ? Image.file(
                         File(imagePath),
                         fit: BoxFit.cover,
                       )
-                    : const Icon(
+                    : Icon(
                         Icons.image_not_supported,
-                        color: AppColors.textGrey,
+                        color: Colors.white.withOpacity(0.3),
+                        size: 40,
                       ),
               ),
             ),
@@ -303,7 +334,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             // Problem details
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -311,20 +342,20 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     if (skillCategory != null)
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
+                          horizontal: 10,
+                          vertical: 5,
                         ),
-                        margin: const EdgeInsets.only(bottom: 8),
+                        margin: const EdgeInsets.only(bottom: 10),
                         decoration: BoxDecoration(
                           color: AppColors.primary.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
                           skillCategory,
                           style: const TextStyle(
                             color: AppColors.primary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
                       ),
@@ -333,23 +364,33 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     Text(
                       preview,
                       style: const TextStyle(
-                        color: AppColors.textWhite,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                     
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 8),
                     
                     // Time
-                    Text(
-                      timeStr,
-                      style: TextStyle(
-                        color: AppColors.textGrey.withOpacity(0.6),
-                        fontSize: 12,
-                      ),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.access_time,
+                          size: 14,
+                          color: Colors.white.withOpacity(0.5),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          timeStr,
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.5),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -357,12 +398,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ),
             
             // Arrow icon
-            const Padding(
-              padding: EdgeInsets.all(12),
+            Padding(
+              padding: const EdgeInsets.all(16),
               child: Icon(
                 Icons.arrow_forward_ios,
-                color: AppColors.textGrey,
-                size: 16,
+                color: AppColors.primary,
+                size: 18,
               ),
             ),
           ],
@@ -376,18 +417,29 @@ class _HistoryScreenState extends State<HistoryScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.cardBackground,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
         title: const Text(
           'Clear All History?',
-          style: TextStyle(color: AppColors.textWhite),
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         content: const Text(
           'This will delete all your saved problems. This action cannot be undone.',
-          style: TextStyle(color: AppColors.textGrey),
+          style: TextStyle(color: Colors.white70),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.textGrey)),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.7),
+              ),
+            ),
           ),
           TextButton(
             onPressed: () async {
@@ -403,7 +455,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 );
               }
             },
-            child: const Text('Clear', style: TextStyle(color: Colors.red)),
+            child: const Text(
+              'Clear',
+              style: TextStyle(
+                color: Colors.red,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),

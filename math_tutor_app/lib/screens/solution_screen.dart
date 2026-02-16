@@ -317,7 +317,11 @@ void dispose() {
                       ),
                       child: const Text(
                         'Solve Another Problem',
-                        style: TextStyle(fontSize: 16),
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
@@ -518,26 +522,6 @@ void dispose() {
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      
-                      // Badge showing number of items
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '${stepBlocks.length}',
-                          style: TextStyle(
-                            color: AppColors.primary,
-                            fontSize: 14,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -775,10 +759,8 @@ Future<void> _autoSaveToHistory() async {
           ),
           const SizedBox(height: 16),
           const Text(
-            'Please make sure you have\n'
-            '1. Set your OpenAI API key\n'
-            '2. Sufficient OpenAI credits\n'
-            '3. Proper internet connection',
+            'An error occured while processing your problem\n'
+            'Please make sure you have proper internet connections\n',
             style: TextStyle(color: Colors.white70, fontSize: 14),
           ),
         ],

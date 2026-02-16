@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'dart:math';
 import '../constants/colors.dart';
 import '../services/supabase_service.dart';
 import 'scan_screen.dart';
@@ -21,6 +23,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   String _userName = '';
   List<Map<String, dynamic>> _topSkills = [];
   bool _isLoading = true;
+  
+  // Weekly chart data
+  List<int> _weekCounts = List.filled(7, 0);
+  bool _loadingWeek = true;
   
   // Controllers for animations
   late AnimationController _pulseController;
@@ -56,6 +62,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     
     // Load user data
     _loadUserData();
+    _loadWeeklyCounts();
   }
 
   @override
@@ -70,6 +77,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   void didChangeDependencies() {
     super.didChangeDependencies();
     _loadUserData();
+    _loadWeeklyCounts();
   }
 
   Future<void> _loadUserData() async {
@@ -107,6 +115,44 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           _isLoading = false;
         });
       }
+    }
+  }
+
+  Future<void> _loadWeeklyCounts() async {
+    if (!_supabaseService.isLoggedIn) {
+      if (!mounted) return;
+      setState(() {
+        _weekCounts = List.filled(7, 0);
+        _loadingWeek = false;
+      });
+      return;
+    }
+
+    final now = DateTime.now();
+    final startOfWeek = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: now.weekday - 1)); // Monday
+
+    try {
+      final history = await _supabaseService.getProblemHistory(startDate: startOfWeek);
+
+      final counts = List<int>.filled(7, 0);
+      for (final item in history) {
+        final solvedAt = DateTime.parse(item['solved_at'] as String).toLocal();
+        final index = solvedAt.weekday - 1; // Mon=0 ... Sun=6
+        if (index >= 0 && index < 7) counts[index]++;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _weekCounts = counts;
+        _loadingWeek = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _weekCounts = List.filled(7, 0);
+        _loadingWeek = false;
+      });
     }
   }
 
@@ -199,148 +245,264 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                   ),
                 ),
                 
-                const Spacer(),
-
-                // Main content area
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Column(
-                    children: [
-                      // Personalized greeting
-                      _isLoading
-                          ? const SizedBox(height: 40)
-                          : Column(
-                              children: [
-                                Text(
-                                  'Hi, $_userName',
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    fontSize: 28,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.primary,
-                                    letterSpacing: -0.5,
+                // Main content - now scrollable
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 20),
+                        
+                        // Personalized greeting
+                        _isLoading
+                            ? const SizedBox(height: 40)
+                            : Column(
+                                children: [
+                                  Text(
+                                    'Hi, $_userName',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontSize: 28,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.primary,
+                                      letterSpacing: -0.5,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(height: 16),
-                                
-                                // Skills progress (if available)
-                                if (_topSkills.isNotEmpty) ...[
-                                  _buildSkillsProgress(),
+                                  const SizedBox(height: 16),
+                                  
+                                  // Skills progress (if available)
+                                  if (_topSkills.isNotEmpty) ...[
+                                    _buildSkillsProgress(),
+                                    const SizedBox(height: 16),
+                                  ],
+                                  
+                                  // Weekly chart
+                                  _buildWeeklyChartCard(),
                                   const SizedBox(height: 24),
                                 ],
-                              ],
-                            ),
-                      
-                      // Main headline
-                      const Text(
-                        'Ready to learn?',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 40,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                          letterSpacing: -0.5,
-                          height: 1.1,
-                        ),
-                      ),
-                      
-                      const SizedBox(height: 12),
-                      
-                      // Subtitle
-                      Text(
-                        'Scan any problem to get started',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 17,
-                          color: Colors.white.withOpacity(0.6),
-                          fontWeight: FontWeight.w400,
-                          letterSpacing: -0.2,
-                        ),
-                      ),
-                      
-                      const SizedBox(height: 60),
-
-                      // Big circular scan button
-                      ScaleTransition(
-                        scale: _pulseAnimation,
-                        child: GestureDetector(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => 
-                                  ScanScreen(cameras: widget.cameras),
                               ),
-                            );
-                          },
-                          child: Container(
-                            width: 200,
-                            height: 200,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: AppColors.primary,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppColors.primary.withOpacity(0.3),
-                                  blurRadius: 40,
-                                  spreadRadius: 0,
+                        
+                        // Main headline
+                        const Text(
+                          'Ready to learn?',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 40,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                            letterSpacing: -0.5,
+                            height: 1.1,
+                          ),
+                        ),
+                        
+                        const SizedBox(height: 12),
+                        
+                        // Subtitle
+                        Text(
+                          'Scan any problem to get started',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 17,
+                            color: Colors.white.withOpacity(0.6),
+                            fontWeight: FontWeight.w400,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                        
+                        const SizedBox(height: 60),
+
+                        // Big circular scan button
+                        ScaleTransition(
+                          scale: _pulseAnimation,
+                          child: GestureDetector(
+                            onTap: () async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => ScanScreen(cameras: widget.cameras),
                                 ),
-                              ],
-                            ),
-                            child: const Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.camera_alt_rounded, 
-                                  size: 56, color: Colors.white),
-                                SizedBox(height: 12),
-                                Text(
-                                  'Scan',
-                                  style: TextStyle(
-                                    fontSize: 19,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.white,
-                                    letterSpacing: -0.3,
+                              );
+
+                              _loadUserData();
+                              _loadWeeklyCounts();
+                            },
+                            child: Container(
+                              width: 200,
+                              height: 200,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: AppColors.primary,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppColors.primary.withOpacity(0.3),
+                                    blurRadius: 40,
+                                    spreadRadius: 0,
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
+                              child: const Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.camera_alt_rounded, 
+                                    size: 56, color: Colors.white),
+                                  SizedBox(height: 12),
+                                  Text(
+                                    'Scan',
+                                    style: TextStyle(
+                                      fontSize: 19,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white,
+                                      letterSpacing: -0.3,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      
-                      const SizedBox(height: 50),
+                        
+                        const SizedBox(height: 50),
 
-                      // Secondary action buttons
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _QuickActionButton(
-                            icon: Icons.keyboard_outlined,
-                            label: 'Type',
-                            onTap: () {
-                              // TODO: open keyboard input screen
-                            },
-                          ),
-                          const SizedBox(width: 20),
-                          _QuickActionButton(
-                            icon: Icons.photo_library_outlined,
-                            label: 'Upload',
-                            onTap: () {
-                              // TODO: open image picker
-                            },
-                          ),
-                        ],
-                      ),
-                    ],
+                        // Secondary action buttons
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _QuickActionButton(
+                              icon: Icons.keyboard_outlined,
+                              label: 'Type',
+                              onTap: () {
+                                // TODO: open keyboard input screen
+                              },
+                            ),
+                            const SizedBox(width: 20),
+                            _QuickActionButton(
+                              icon: Icons.photo_library_outlined,
+                              label: 'Upload',
+                              onTap: () {
+                                // TODO: open image picker
+                              },
+                            ),
+                          ],
+                        ),
+                        
+                        const SizedBox(height: 40),
+                      ],
+                    ),
                   ),
                 ),
-                
-                const Spacer(),
-                const SizedBox(height: 40),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Builds the weekly chart card
+  Widget _buildWeeklyChartCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.primary.withOpacity(0.2),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'This Week',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 180,
+            child: _buildWeeklyChart(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Builds the weekly bar chart
+  Widget _buildWeeklyChart() {
+    if (_loadingWeek) {
+      return const Center(
+        child: CircularProgressIndicator(color: AppColors.primary),
+      );
+    }
+
+    final maxY = max(1, _weekCounts.reduce(max)).toDouble();
+    const labels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+    return AspectRatio(
+      aspectRatio: 1.8,
+      child: BarChart(
+        BarChartData(
+          maxY: maxY,
+          gridData: FlGridData(show: false),
+          borderData: FlBorderData(show: false),
+          titlesData: FlTitlesData(
+            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  final i = value.toInt();
+                  if (i < 0 || i > 6) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      labels[i],
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          barGroups: List.generate(7, (i) {
+            return BarChartGroupData(
+              x: i,
+              barRods: [
+                BarChartRodData(
+                  toY: _weekCounts[i].toDouble(),
+                  width: 16,
+                  borderRadius: BorderRadius.circular(6),
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.primary,
+                      AppColors.primary.withOpacity(0.7),
+                    ],
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                  ),
+                ),
+              ],
+            );
+          }),
+        ),
       ),
     );
   }
@@ -356,6 +518,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           color: AppColors.primary.withOpacity(0.2),
           width: 1,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

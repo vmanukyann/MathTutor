@@ -73,10 +73,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         backgroundColor: AppColors.cardBackground,
         title: const Text('Profile Picture', style: TextStyle(color: AppColors.textWhite)),
         content: const Text(
-          'To enable profile picture uploads, add this to your pubspec.yaml:\n\n'
-          'dependencies:\n'
-          '  image_picker: ^1.0.7\n\n'
-          'Then run: flutter pub get',
+          'Failed to upload media',
           style: TextStyle(color: AppColors.textGrey, fontSize: 13),
         ),
         actions: [
@@ -104,7 +101,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Profile updated successfully'),
+            content: Text('Profile Updated!'),
             backgroundColor: AppColors.primary,
           ),
         );
