@@ -3,8 +3,13 @@ import 'dart:io';
 import 'dart:math';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
+import 'package:path_provider/path_provider.dart';
 import '../constants/colors.dart';
 import '../services/openai_service.dart';
+import '../services/local_storage_service.dart';
+import '../services/supabase_service.dart';
+import 'dart:async';
+
 
 // Screen that shows the solution to a captured math problem
 class SolutionScreen extends StatefulWidget {
@@ -21,7 +26,12 @@ class _SolutionScreenState extends State<SolutionScreen> {
   List<SolutionBlock> _solution = [];
   String _error = '';
   final OpenAIService _openAIService = OpenAIService();
-  
+  final LocalStorageService _localStorage = LocalStorageService();
+  final SupabaseService _supabaseService = SupabaseService();
+  StreamSubscription? _playerStateSub;
+  StreamSubscription? _durationSub;
+  StreamSubscription? _positionSub;
+
   // Audio playback state
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isGeneratingAudio = false;
@@ -35,6 +45,10 @@ class _SolutionScreenState extends State<SolutionScreen> {
   
   // Track which steps are expanded
   final Map<int, bool> _expandedSteps = {};
+
+  // Auto-save tracking
+  bool _hasAutoSaved = false;
+  String? _savedProblemId;
 
   // List of motivational quotes
   static const List<String> _quotes = [
@@ -56,38 +70,47 @@ class _SolutionScreenState extends State<SolutionScreen> {
     _analyzeProblem();
     
     // Listen to audio player state changes
-    _audioPlayer.onPlayerStateChanged.listen((state) {
+    _playerStateSub = _audioPlayer.onPlayerStateChanged.listen((state) {
+      if (!mounted) return;
       setState(() {
         _isPlayingAudio = state == PlayerState.playing;
       });
     });
-    
-    // Listen to audio duration changes
-    _audioPlayer.onDurationChanged.listen((duration) {
+
+    _durationSub = _audioPlayer.onDurationChanged.listen((duration) {
+      if (!mounted) return;
       setState(() {
         _audioDuration = duration;
       });
     });
-    
-    // Listen to audio position changes
-    _audioPlayer.onPositionChanged.listen((position) {
+
+    _positionSub = _audioPlayer.onPositionChanged.listen((position) {
+      if (!mounted) return;
       setState(() {
         _audioPosition = position;
       });
     });
   }
 
-  @override
-  void dispose() {
-    _audioPlayer.dispose();
-    // Clean up the audio file if it exists
-    if (_audioPath != null) {
-      try {
-        File(_audioPath!).deleteSync();
-      } catch (_) {}
-    }
-    super.dispose();
+@override
+void dispose() {
+  // Cancel stream listeners FIRST
+  _playerStateSub?.cancel();
+  _durationSub?.cancel();
+  _positionSub?.cancel();
+
+  _audioPlayer.dispose();
+
+  // Only clean up audio file if it's not saved to history (temp file)
+  if (_audioPath != null && !_hasAutoSaved) {
+    try {
+      File(_audioPath!).deleteSync();
+    } catch (_) {}
   }
+
+  super.dispose();
+}
+
 
   /// Sends the image to OpenAI and gets back the solution
   Future<void> _analyzeProblem() async {
@@ -95,22 +118,29 @@ class _SolutionScreenState extends State<SolutionScreen> {
       final solution =
           await _openAIService.analyzeMathProblem(widget.imagePath);
 
+      if (!mounted) return;
       setState(() {
         _solution = solution;
         _isLoading = false;
       });
+
+      // Auto-save to history after successfully getting solution
+      await _autoSaveToHistory();
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString();
         _isLoading = false;
       });
     }
+
   }
 
   /// Generates audio explanation of the solution
   Future<void> _generateAndPlayAudio() async {
     if (_solution.isEmpty) return;
-    
+
+    if (!mounted) return;
     setState(() {
       _isGeneratingAudio = true;
     });
@@ -122,11 +152,12 @@ class _SolutionScreenState extends State<SolutionScreen> {
       } else {
         // Generate new audio
         final audioPath = await _openAIService.generateAudioExplanation(_solution);
-        
+
+        if (!mounted) return;
         setState(() {
           _audioPath = audioPath;
         });
-        
+
         // Play the audio
         await _audioPlayer.play(DeviceFileSource(audioPath));
       }
@@ -141,6 +172,7 @@ class _SolutionScreenState extends State<SolutionScreen> {
         );
       }
     } finally {
+      if (!mounted) return;
       setState(() {
         _isGeneratingAudio = false;
       });
@@ -161,6 +193,7 @@ class _SolutionScreenState extends State<SolutionScreen> {
   /// Stops audio playback
   Future<void> _stopAudio() async {
     await _audioPlayer.stop();
+    if (!mounted) return;
     setState(() {
       _audioPosition = Duration.zero;
     });
@@ -615,6 +648,91 @@ class _SolutionScreenState extends State<SolutionScreen> {
         return const SizedBox.shrink();
     }
   }
+
+  /// Persists a file to the history directory
+  Future<String> _persistFileToHistoryDir(String sourcePath, String destFileName) async {
+    final docsDir = await getApplicationDocumentsDirectory();
+    final historyDir = Directory('${docsDir.path}/mathtutor_history');
+    if (!await historyDir.exists()) {
+      await historyDir.create(recursive: true);
+    }
+    final destPath = '${historyDir.path}/$destFileName';
+    return (await File(sourcePath).copy(destPath)).path;
+  }
+
+  /// Auto-saves solution, image, and audio to history
+Future<void> _autoSaveToHistory() async {
+  if (_hasAutoSaved || _solution.isEmpty || _error.isNotEmpty) return;
+
+  final id = DateTime.now().millisecondsSinceEpoch.toString();
+  _savedProblemId = id;
+
+  try {
+    // 1) Persist image
+    final imageExt =
+        widget.imagePath.contains('.') ? widget.imagePath.split('.').last : 'jpg';
+    final savedImagePath =
+        await _persistFileToHistoryDir(widget.imagePath, 'img_$id.$imageExt');
+
+    // 2) SAVE IMMEDIATELY (so History shows it even if user leaves)
+    await _localStorage.saveProblemLocally(
+      id: id,
+      imagePath: savedImagePath,
+      audioPath: null, // audio comes later
+      solution: _solution,
+    );
+
+    _hasAutoSaved = true;
+
+    // 3) Save to Supabase (optional, don't block local history)
+    if (_supabaseService.isLoggedIn) {
+      try {
+        await _supabaseService.saveProblemToHistory(
+          imagePath: savedImagePath,
+          solution: _solution,
+        );
+      } catch (e) {
+        print('Error saving to Supabase: $e');
+      }
+    }
+
+    // 4) Generate audio AFTER saving (optional enhancement)
+    if (mounted) setState(() => _isGeneratingAudio = true);
+
+    final tempAudioPath = await _openAIService.generateAudioExplanation(_solution);
+    final savedAudioPath =
+        await _persistFileToHistoryDir(tempAudioPath, 'audio_$id.mp3');
+
+    try {
+      await File(tempAudioPath).delete();
+    } catch (_) {}
+
+    // Update local entry to include audio
+    await _localStorage.updateProblemLocally(id, {'audioPath': savedAudioPath});
+
+    // Update UI only if still on screen
+    if (mounted) {
+      setState(() {
+        _audioPath = savedAudioPath;
+        _isGeneratingAudio = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Saved to History'),
+          backgroundColor: AppColors.primary,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  } catch (e) {
+    print('Error auto-saving to history: $e');
+    if (mounted) {
+      setState(() => _isGeneratingAudio = false);
+    }
+  }
+}
+
 
   /// Formats duration to MM:SS
   String _formatDuration(Duration duration) {

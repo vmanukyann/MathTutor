@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:intl/intl.dart';
 import '../constants/colors.dart';
 import '../services/local_storage_service.dart';
+import '../services/supabase_service.dart';
 import '../services/openai_service.dart';
 import 'solution_detail_screen.dart';
 
@@ -15,6 +16,7 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   final _localStorage = LocalStorageService();
+  final _supabaseService = SupabaseService();
   List<Map<String, dynamic>> _allHistory = [];
   bool _isLoading = true;
 
@@ -30,7 +32,35 @@ class _HistoryScreenState extends State<HistoryScreen> {
     });
 
     try {
-      final history = await _localStorage.getLocalHistory();
+      List<Map<String, dynamic>> history = [];
+      
+      // Try to load from Supabase if logged in
+      if (_supabaseService.isLoggedIn) {
+        try {
+          final supabaseHistory = await _supabaseService.getProblemHistory();
+          
+          // Convert Supabase format to local format
+          history = supabaseHistory.map((problem) {
+            return {
+              'id': problem['id'].toString(),
+              'imagePath': problem['image_path'] as String,
+              'audioPath': null, // Supabase doesn't store audio path
+              'solution': problem['solution_data'] as List<dynamic>,
+              'skillCategory': problem['skill_category'] as String?,
+              'skillName': problem['skill_name'] as String?,
+              'solvedAt': problem['solved_at'] as String,
+            };
+          }).toList();
+        } catch (e) {
+          print('Error loading from Supabase: $e');
+          // Fall back to local storage
+        }
+      }
+      
+      // If Supabase didn't work or user not logged in, use local storage
+      if (history.isEmpty) {
+        history = await _localStorage.getLocalHistory();
+      }
       
       setState(() {
         _allHistory = history;
@@ -230,6 +260,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             builder: (context) => SolutionDetailScreen(
               problemId: problem['id'] as String,
               imagePath: imagePath,
+              audioPath: problem['audioPath'] as String?,
               solution: solution,
             ),
           ),

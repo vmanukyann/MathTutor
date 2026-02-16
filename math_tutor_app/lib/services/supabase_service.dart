@@ -195,16 +195,16 @@ class SupabaseService {
 
   /// Save a solved problem to history
   Future<void> saveProblemToHistory({
-    required String imagePath,
-    required List<SolutionBlock> solution,
-    String? skillCategory,
-    String? skillName,
-  }) async {
-    if (currentUser == null) throw Exception('No user logged in');
+  required String imagePath,
+  required List<SolutionBlock> solution,
+  String? skillCategory,
+  String? skillName,
+}) async {
+  if (currentUser == null) throw Exception('No user logged in');
 
-    // Convert solution blocks to JSON
-    final solutionJson = solution.map((block) => block.toJson()).toList();
+  final solutionJson = solution.map((block) => block.toJson()).toList();
 
+  try {
     await client.from('problem_history').insert({
       'user_id': currentUser!.id,
       'image_path': imagePath,
@@ -213,16 +213,14 @@ class SupabaseService {
       'skill_name': skillName,
       'solved_at': DateTime.now().toIso8601String(),
     });
-
-    // Update skill if provided
-    if (skillName != null && skillCategory != null) {
-      await updateSkill(
-        skillName: skillName,
-        skillCategory: skillCategory,
-        wasSolved: true,
-      );
-    }
+  } on PostgrestException catch (e) {
+    print('SUPABASE INSERT ERROR: ${e.code}');
+    print('Message: ${e.message}');
+    print('Details: ${e.details}');
+    rethrow;
   }
+}
+
 
   /// Get problem history for the current user
   /// Can filter by date

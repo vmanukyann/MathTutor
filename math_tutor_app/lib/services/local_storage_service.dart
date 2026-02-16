@@ -37,6 +37,7 @@ class LocalStorageService {
   Future<void> saveProblemLocally({
     required String id,
     required String imagePath,
+    String? audioPath,
     required List<SolutionBlock> solution,
     String? skillCategory,
     String? skillName,
@@ -53,6 +54,7 @@ class LocalStorageService {
     final problemData = {
       'id': id,
       'imagePath': imagePath,
+      'audioPath': audioPath,
       'solution': solution.map((block) => block.toJson()).toList(),
       'skillCategory': skillCategory,
       'skillName': skillName,
@@ -63,6 +65,23 @@ class LocalStorageService {
     history.insert(0, problemData); // Add to beginning
 
     // Save back to preferences
+    await prefs.setString(_historyKey, jsonEncode(history));
+  }
+
+  /// Update an existing problem in local history
+  Future<void> updateProblemLocally(String id, Map<String, dynamic> updates) async {
+    final prefs = await SharedPreferences.getInstance();
+    final historyJson = prefs.getString(_historyKey);
+    if (historyJson == null) return;
+
+    final List<dynamic> history = jsonDecode(historyJson) as List<dynamic>;
+    final index = history.indexWhere((p) => (p as Map<String, dynamic>)['id'] == id);
+    if (index == -1) return;
+
+    final current = Map<String, dynamic>.from(history[index] as Map);
+    current.addAll(updates);
+    history[index] = current;
+
     await prefs.setString(_historyKey, jsonEncode(history));
   }
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import '../constants/colors.dart';
 import '../services/openai_service.dart';
 import '../services/local_storage_service.dart';
@@ -11,12 +12,14 @@ import 'dart:math';
 class SolutionDetailScreen extends StatefulWidget {
   final String problemId;
   final String imagePath;
+  final String? audioPath;
   final List<SolutionBlock> solution;
 
   const SolutionDetailScreen({
     Key? key,
     required this.problemId,
     required this.imagePath,
+    this.audioPath,
     required this.solution,
   }) : super(key: key);
 
@@ -43,6 +46,9 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
   void initState() {
     super.initState();
     
+    // Use the provided audio path if available
+    _audioPath = widget.audioPath;
+    
     // Setup audio listeners
     _audioPlayer.onPlayerStateChanged.listen((state) {
       setState(() {
@@ -66,11 +72,7 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
   @override
   void dispose() {
     _audioPlayer.dispose();
-    if (_audioPath != null) {
-      try {
-        File(_audioPath!).deleteSync();
-      } catch (_) {}
-    }
+    // Don't delete audio files - they're saved to history directory
     super.dispose();
   }
 
@@ -83,16 +85,38 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
     });
 
     try {
-      if (_audioPath != null) {
+      if (_audioPath != null && await File(_audioPath!).exists()) {
+        // Audio already exists, just play it
         await _audioPlayer.play(DeviceFileSource(_audioPath!));
       } else {
-        final audioPath = await _openAIService.generateAudioExplanation(widget.solution);
+        // Generate new audio
+        final tempAudioPath = await _openAIService.generateAudioExplanation(widget.solution);
+        
+        // Persist to history directory
+        final docsDir = await getApplicationDocumentsDirectory();
+        final historyDir = Directory('${docsDir.path}/mathtutor_history');
+        if (!await historyDir.exists()) {
+          await historyDir.create(recursive: true);
+        }
+        final savedAudioPath = '${historyDir.path}/audio_${widget.problemId}.mp3';
+        await File(tempAudioPath).copy(savedAudioPath);
+        
+        // Delete temp file
+        try {
+          await File(tempAudioPath).delete();
+        } catch (_) {}
         
         setState(() {
-          _audioPath = audioPath;
+          _audioPath = savedAudioPath;
         });
         
-        await _audioPlayer.play(DeviceFileSource(audioPath));
+        // Update history entry with audio path
+        await _localStorage.updateProblemLocally(
+          widget.problemId,
+          {'audioPath': savedAudioPath},
+        );
+        
+        await _audioPlayer.play(DeviceFileSource(savedAudioPath));
       }
     } catch (e) {
       if (mounted) {
