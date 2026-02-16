@@ -9,7 +9,7 @@ import 'scan_screen.dart';
 // Main home screen widget - shows personalized landing page
 class HomeScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
-  
+
   const HomeScreen({Key? key, required this.cameras}) : super(key: key);
 
   @override
@@ -18,19 +18,27 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _supabaseService = SupabaseService();
-  
+
   // User data
   String _userName = '';
   List<Map<String, dynamic>> _topSkills = [];
   bool _isLoading = true;
-  
+
   // Weekly chart data
   List<int> _weekCounts = List.filled(7, 0);
   bool _loadingWeek = true;
-  
+
   // Stats
   int _totalProblems = 0;
   int _problemsThisWeek = 0;
+
+  DateTime? _parseDateTime(dynamic raw) {
+    if (raw is DateTime) return raw.toLocal();
+    if (raw is String && raw.isNotEmpty) {
+      return DateTime.tryParse(raw)?.toLocal();
+    }
+    return null;
+  }
 
   @override
   void initState() {
@@ -48,16 +56,52 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadStats();
   }
 
+  /// ✅ Time-based + slightly random greeting
+  String _getTimeBasedGreeting() {
+    final hour = DateTime.now().hour;
+
+    String timePhrase;
+    if (hour >= 5 && hour < 12) {
+      timePhrase = 'Good Morning';
+    } else if (hour >= 12 && hour < 17) {
+      timePhrase = 'Good Afternoon';
+    } else if (hour >= 17 && hour < 21) {
+      timePhrase = 'Good Evening';
+    } else if (hour >= 21 && hour < 24) {
+      timePhrase = "It's Late Night";
+    } else {
+      timePhrase = 'Burning the Midnight Oil';
+    }
+
+    // Optional extra line (random)
+    final extras = <String>[
+      '',
+      'Ready to level up?',
+      "Let's crush some math.",
+      'Time to get sharper.',
+      "Let's make progress.",
+    ];
+
+    final extra = extras[Random().nextInt(extras.length)];
+
+    // If no extra, keep it one-line clean
+    if (extra.isEmpty) return '$timePhrase, $_userName';
+
+    // If extra exists, show it on a 2nd line
+    return '$timePhrase, $_userName\n$extra';
+  }
+
   Future<void> _loadUserData() async {
     try {
       final user = _supabaseService.currentUser;
       final profile = await _supabaseService.getUserProfile();
       final skills = await _supabaseService.getTopSkills(limit: 2);
       final metaName = user?.userMetadata?['full_name'] as String?;
-      
+
       if (mounted) {
         setState(() {
-          _userName = (profile?['full_name'] as String?) ?? metaName ?? 'Student';
+          _userName =
+              (profile?['full_name'] as String?) ?? metaName ?? 'Student';
           _topSkills = skills;
           _isLoading = false;
         });
@@ -83,15 +127,21 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final now = DateTime.now();
-    final startOfWeek = DateTime(now.year, now.month, now.day)
-        .subtract(Duration(days: now.weekday - 1));
+    final startOfWeek = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(Duration(days: now.weekday - 1));
 
     try {
-      final history = await _supabaseService.getProblemHistory(startDate: startOfWeek);
+      final history = await _supabaseService.getProblemHistory(
+        startDate: startOfWeek,
+      );
 
       final counts = List<int>.filled(7, 0);
       for (final item in history) {
-        final solvedAt = DateTime.parse(item['solved_at'] as String).toLocal();
+        final solvedAt = _parseDateTime(item['solved_at']);
+        if (solvedAt == null) continue;
         final index = solvedAt.weekday - 1;
         if (index >= 0 && index < 7) counts[index]++;
       }
@@ -160,28 +210,28 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   // Header with greeting
                   _buildHeader(),
-                  
+
                   const SizedBox(height: 32),
-                  
+
                   // Stats cards
                   _buildStatsRow(),
-                  
+
                   const SizedBox(height: 24),
-                  
+
                   // Weekly activity chart
                   _buildWeeklyActivityCard(),
-                  
+
                   const SizedBox(height: 24),
-                  
+
                   // Skills progress (if available)
                   if (_topSkills.isNotEmpty) ...[
                     _buildSkillsCard(),
                     const SizedBox(height: 24),
                   ],
-                  
+
                   // Main scan button
                   _buildScanButton(),
-                  
+
                   const SizedBox(height: 24),
                 ],
               ),
@@ -225,7 +275,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
             ),
-            
+
             // Settings icon
             IconButton(
               icon: const Icon(Icons.settings, color: Colors.white70),
@@ -235,17 +285,18 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
-        
+
         const SizedBox(height: 24),
-        
-        // Greeting
+
+        // ✅ Greeting
         if (!_isLoading) ...[
           Text(
-            'Hello, $_userName 👋',
+            _getTimeBasedGreeting(),
             style: const TextStyle(
               fontSize: 32,
               fontWeight: FontWeight.bold,
               color: Colors.white,
+              height: 1.1,
             ),
           ),
           const SizedBox(height: 8),
@@ -285,7 +336,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildStatCard(String label, String value, IconData icon, Color color) {
+  Widget _buildStatCard(
+    String label,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -361,7 +417,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.primary.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(12),
@@ -378,10 +437,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
           const SizedBox(height: 24),
-          SizedBox(
-            height: 200,
-            child: _buildWeeklyChart(),
-          ),
+          SizedBox(height: 200, child: _buildWeeklyChart()),
         ],
       ),
     );
@@ -394,9 +450,11 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    final maxY = max(1, _weekCounts.reduce(max)).toDouble();
+    final peakCount = _weekCounts.reduce(max);
+    final maxY = max(1, peakCount).toDouble();
     const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     final today = DateTime.now().weekday - 1;
+    final hasAnyData = _weekCounts.any((count) => count > 0);
 
     return BarChart(
       BarChartData(
@@ -414,9 +472,15 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         borderData: FlBorderData(show: false),
         titlesData: FlTitlesData(
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          leftTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
@@ -428,11 +492,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Text(
                     labels[i],
                     style: TextStyle(
-                      color: i == today 
-                        ? AppColors.primary 
-                        : Colors.white.withOpacity(0.6),
+                      color: i == today
+                          ? AppColors.primary
+                          : Colors.white.withOpacity(0.6),
                       fontSize: 12,
-                      fontWeight: i == today ? FontWeight.bold : FontWeight.normal,
+                      fontWeight: i == today
+                          ? FontWeight.bold
+                          : FontWeight.normal,
                     ),
                   ),
                 );
@@ -442,26 +508,31 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         barGroups: List.generate(7, (i) {
           final isToday = i == today;
+          final value = _weekCounts[i].toDouble();
           return BarChartGroupData(
             x: i,
             barRods: [
               BarChartRodData(
-                toY: _weekCounts[i].toDouble(),
+                // Keep a tiny visible bar when there is no data for the week
+                // so the chart never looks "missing".
+                toY: hasAnyData ? value : 0.06,
                 width: 24,
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(6),
                   topRight: Radius.circular(6),
                 ),
+                backDrawRodData: BackgroundBarChartRodData(
+                  show: true,
+                  toY: maxY,
+                  color: Colors.white.withOpacity(0.06),
+                ),
                 gradient: LinearGradient(
-                  colors: isToday 
-                    ? [
-                        AppColors.primary,
-                        AppColors.primary.withOpacity(0.6),
-                      ]
-                    : [
-                        Colors.white.withOpacity(0.3),
-                        Colors.white.withOpacity(0.1),
-                      ],
+                  colors: isToday
+                      ? [AppColors.primary, AppColors.primary.withOpacity(0.6)]
+                      : [
+                          Colors.white.withOpacity(0.3),
+                          Colors.white.withOpacity(0.1),
+                        ],
                   begin: Alignment.bottomCenter,
                   end: Alignment.topCenter,
                 ),
@@ -501,9 +572,15 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 20),
           ...List.generate(_topSkills.length, (index) {
             final skill = _topSkills[index];
-            final percentage = skill['percentage'] as int;
-            final skillName = skill['skill_category'] as String;
-            
+            final percentage = (skill['percentage'] as num?)?.toDouble() ?? 0.0;
+            final percentageLabel = percentage.toStringAsFixed(
+              percentage.truncateToDouble() == percentage ? 0 : 2,
+            );
+            final skillName =
+                ((skill['skill_name'] as String?)?.trim().isNotEmpty ?? false)
+                ? skill['skill_name'] as String
+                : (skill['skill_category'] as String? ?? 'General Math');
+
             return Padding(
               padding: const EdgeInsets.only(bottom: 16),
               child: Column(
@@ -521,7 +598,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       Text(
-                        '$percentage%',
+                        '$percentageLabel%',
                         style: const TextStyle(
                           color: AppColors.primary,
                           fontSize: 16,
@@ -534,9 +611,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: LinearProgressIndicator(
-                      value: percentage / 100,
+                      value: (percentage / 100).clamp(0.0, 1.0),
                       backgroundColor: Colors.white.withOpacity(0.1),
-                      valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        AppColors.primary,
+                      ),
                       minHeight: 8,
                     ),
                   ),
@@ -583,11 +662,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: const Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.camera_alt_rounded,
-              color: Colors.white,
-              size: 28,
-            ),
+            Icon(Icons.camera_alt_rounded, color: Colors.white, size: 28),
             SizedBox(width: 12),
             Text(
               'Scan Problem',

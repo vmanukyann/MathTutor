@@ -10,7 +10,6 @@ import '../services/local_storage_service.dart';
 import '../services/supabase_service.dart';
 import 'dart:async';
 
-
 // Screen that shows the solution to a captured math problem
 class SolutionScreen extends StatefulWidget {
   final String imagePath;
@@ -24,6 +23,8 @@ class SolutionScreen extends StatefulWidget {
 class _SolutionScreenState extends State<SolutionScreen> {
   bool _isLoading = true;
   List<SolutionBlock> _solution = [];
+  String _skillCategory = 'Other';
+  String _skillName = 'General Problem Solving';
   String _error = '';
   final OpenAIService _openAIService = OpenAIService();
   final LocalStorageService _localStorage = LocalStorageService();
@@ -42,7 +43,7 @@ class _SolutionScreenState extends State<SolutionScreen> {
 
   // Random motivational quote
   late String _motivationalQuote;
-  
+
   // Track which steps are expanded
   final Map<int, bool> _expandedSteps = {};
 
@@ -65,10 +66,10 @@ class _SolutionScreenState extends State<SolutionScreen> {
     super.initState();
     // Pick a random quote
     _motivationalQuote = _quotes[Random().nextInt(_quotes.length)];
-    
+
     // Start analyzing as soon as the screen loads
     _analyzeProblem();
-    
+
     // Listen to audio player state changes
     _playerStateSub = _audioPlayer.onPlayerStateChanged.listen((state) {
       if (!mounted) return;
@@ -92,35 +93,37 @@ class _SolutionScreenState extends State<SolutionScreen> {
     });
   }
 
-@override
-void dispose() {
-  // Cancel stream listeners FIRST
-  _playerStateSub?.cancel();
-  _durationSub?.cancel();
-  _positionSub?.cancel();
+  @override
+  void dispose() {
+    // Cancel stream listeners FIRST
+    _playerStateSub?.cancel();
+    _durationSub?.cancel();
+    _positionSub?.cancel();
 
-  _audioPlayer.dispose();
+    _audioPlayer.dispose();
 
-  // Only clean up audio file if it's not saved to history (temp file)
-  if (_audioPath != null && !_hasAutoSaved) {
-    try {
-      File(_audioPath!).deleteSync();
-    } catch (_) {}
+    // Only clean up audio file if it's not saved to history (temp file)
+    if (_audioPath != null && !_hasAutoSaved) {
+      try {
+        File(_audioPath!).deleteSync();
+      } catch (_) {}
+    }
+
+    super.dispose();
   }
-
-  super.dispose();
-}
-
 
   /// Sends the image to OpenAI and gets back the solution
   Future<void> _analyzeProblem() async {
     try {
-      final solution =
-          await _openAIService.analyzeMathProblem(widget.imagePath);
+      final analysis = await _openAIService.analyzeMathProblem(
+        widget.imagePath,
+      );
 
       if (!mounted) return;
       setState(() {
-        _solution = solution;
+        _solution = analysis.solution;
+        _skillCategory = analysis.skillCategory;
+        _skillName = analysis.skillName;
         _isLoading = false;
       });
 
@@ -133,7 +136,6 @@ void dispose() {
         _isLoading = false;
       });
     }
-
   }
 
   /// Generates audio explanation of the solution
@@ -151,7 +153,9 @@ void dispose() {
         await _audioPlayer.play(DeviceFileSource(_audioPath!));
       } else {
         // Generate new audio
-        final audioPath = await _openAIService.generateAudioExplanation(_solution);
+        final audioPath = await _openAIService.generateAudioExplanation(
+          _solution,
+        );
 
         if (!mounted) return;
         setState(() {
@@ -211,18 +215,15 @@ void dispose() {
       }
 
       // If it's a step header, start a new step
-      if (block.type == 'header' && 
-          (block.text.toLowerCase().contains('step') || 
-           block.text.toLowerCase().startsWith('step'))) {
+      if (block.type == 'header' &&
+          (block.text.toLowerCase().contains('step') ||
+              block.text.toLowerCase().startsWith('step'))) {
         // Save previous step if exists
         if (currentStep != null) {
           steps.add(currentStep);
         }
         // Start new step
-        currentStep = {
-          'title': block.text,
-          'blocks': <SolutionBlock>[],
-        };
+        currentStep = {'title': block.text, 'blocks': <SolutionBlock>[]};
       } else if (currentStep != null) {
         // Add block to current step
         (currentStep['blocks'] as List<SolutionBlock>).add(block);
@@ -278,7 +279,7 @@ void dispose() {
                     ),
                     textAlign: TextAlign.center,
                   ),
-                  
+
                   const SizedBox(height: 30),
 
                   // Audio Button (Centered)
@@ -339,10 +340,7 @@ void dispose() {
         height: 60,
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              AppColors.primary,
-              AppColors.primary.withOpacity(0.7),
-            ],
+            colors: [AppColors.primary, AppColors.primary.withOpacity(0.7)],
           ),
           borderRadius: BorderRadius.circular(30),
           boxShadow: [
@@ -443,7 +441,7 @@ void dispose() {
               },
             ),
           ),
-          
+
           // Time display
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -452,17 +450,11 @@ void dispose() {
               children: [
                 Text(
                   _formatDuration(_audioPosition),
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 14,
-                  ),
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
                 ),
                 Text(
                   _formatDuration(_audioDuration),
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 14,
-                  ),
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
                 ),
               ],
             ),
@@ -475,7 +467,7 @@ void dispose() {
   /// Builds the steps with dropdown/expansion
   Widget _buildStepsDropdown() {
     final steps = _groupIntoSteps();
-    
+
     return Column(
       children: List.generate(steps.length, (index) {
         final step = steps[index];
@@ -514,7 +506,7 @@ void dispose() {
                         size: 28,
                       ),
                       const SizedBox(width: 12),
-                      
+
                       // Step Title
                       Expanded(
                         child: Text(
@@ -530,7 +522,7 @@ void dispose() {
                   ),
                 ),
               ),
-              
+
               // Step Content (expandable)
               if (isExpanded)
                 Container(
@@ -571,7 +563,7 @@ void dispose() {
             ),
           ),
         );
-      
+
       case 'equation':
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
@@ -579,21 +571,16 @@ void dispose() {
           decoration: BoxDecoration(
             color: AppColors.primary.withOpacity(0.1),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: AppColors.primary.withOpacity(0.3),
-            ),
+            border: Border.all(color: AppColors.primary.withOpacity(0.3)),
           ),
           child: Center(
             child: Math.tex(
               block.text,
-              textStyle: const TextStyle(
-                color: Colors.white,
-                fontSize: 20,
-              ),
+              textStyle: const TextStyle(color: Colors.white, fontSize: 20),
             ),
           ),
         );
-      
+
       case 'question':
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
@@ -601,18 +588,12 @@ void dispose() {
           decoration: BoxDecoration(
             color: Colors.amber.withOpacity(0.1),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: Colors.amber.withOpacity(0.3),
-            ),
+            border: Border.all(color: Colors.amber.withOpacity(0.3)),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(
-                Icons.help_outline,
-                color: Colors.amber,
-                size: 20,
-              ),
+              const Icon(Icons.help_outline, color: Colors.amber, size: 20),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -627,14 +608,17 @@ void dispose() {
             ],
           ),
         );
-      
+
       default:
         return const SizedBox.shrink();
     }
   }
 
   /// Persists a file to the history directory
-  Future<String> _persistFileToHistoryDir(String sourcePath, String destFileName) async {
+  Future<String> _persistFileToHistoryDir(
+    String sourcePath,
+    String destFileName,
+  ) async {
     final docsDir = await getApplicationDocumentsDirectory();
     final historyDir = Directory('${docsDir.path}/mathtutor_history');
     if (!await historyDir.exists()) {
@@ -645,78 +629,96 @@ void dispose() {
   }
 
   /// Auto-saves solution, image, and audio to history
-Future<void> _autoSaveToHistory() async {
-  if (_hasAutoSaved || _solution.isEmpty || _error.isNotEmpty) return;
+  Future<void> _autoSaveToHistory() async {
+    if (_hasAutoSaved || _solution.isEmpty || _error.isNotEmpty) return;
 
-  final id = DateTime.now().millisecondsSinceEpoch.toString();
-  _savedProblemId = id;
-
-  try {
-    // 1) Persist image
-    final imageExt =
-        widget.imagePath.contains('.') ? widget.imagePath.split('.').last : 'jpg';
-    final savedImagePath =
-        await _persistFileToHistoryDir(widget.imagePath, 'img_$id.$imageExt');
-
-    // 2) SAVE IMMEDIATELY (so History shows it even if user leaves)
-    await _localStorage.saveProblemLocally(
-      id: id,
-      imagePath: savedImagePath,
-      audioPath: null, // audio comes later
-      solution: _solution,
-    );
-
-    _hasAutoSaved = true;
-
-    // 3) Save to Supabase (optional, don't block local history)
-    if (_supabaseService.isLoggedIn) {
-      try {
-        await _supabaseService.saveProblemToHistory(
-          imagePath: savedImagePath,
-          solution: _solution,
-        );
-      } catch (e) {
-        print('Error saving to Supabase: $e');
-      }
-    }
-
-    // 4) Generate audio AFTER saving (optional enhancement)
-    if (mounted) setState(() => _isGeneratingAudio = true);
-
-    final tempAudioPath = await _openAIService.generateAudioExplanation(_solution);
-    final savedAudioPath =
-        await _persistFileToHistoryDir(tempAudioPath, 'audio_$id.mp3');
+    final id = DateTime.now().millisecondsSinceEpoch.toString();
+    _savedProblemId = id;
 
     try {
-      await File(tempAudioPath).delete();
-    } catch (_) {}
+      // 1) Persist image
+      final imageExt = widget.imagePath.contains('.')
+          ? widget.imagePath.split('.').last
+          : 'jpg';
+      final savedImagePath = await _persistFileToHistoryDir(
+        widget.imagePath,
+        'img_$id.$imageExt',
+      );
 
-    // Update local entry to include audio
-    await _localStorage.updateProblemLocally(id, {'audioPath': savedAudioPath});
+      // 2) SAVE IMMEDIATELY (so History shows it even if user leaves)
+      await _localStorage.saveProblemLocally(
+        id: id,
+        imagePath: savedImagePath,
+        audioPath: null, // audio comes later
+        solution: _solution,
+        skillCategory: _skillCategory,
+        skillName: _skillName,
+      );
 
-    // Update UI only if still on screen
-    if (mounted) {
-      setState(() {
-        _audioPath = savedAudioPath;
-        _isGeneratingAudio = false;
+      _hasAutoSaved = true;
+
+      // 3) Save to Supabase (optional, don't block local history)
+      if (_supabaseService.isLoggedIn) {
+        try {
+          await _supabaseService.saveProblemToHistory(
+            imagePath: savedImagePath,
+            solution: _solution,
+            skillCategory: _skillCategory,
+            skillName: _skillName,
+          );
+
+          await _supabaseService.updateSkill(
+            skillName: _skillName,
+            skillCategory: _skillCategory,
+            wasSolved: true,
+          );
+        } catch (e) {
+          print('Error saving to Supabase: $e');
+        }
+      }
+
+      // 4) Generate audio AFTER saving (optional enhancement)
+      if (mounted) setState(() => _isGeneratingAudio = true);
+
+      final tempAudioPath = await _openAIService.generateAudioExplanation(
+        _solution,
+      );
+      final savedAudioPath = await _persistFileToHistoryDir(
+        tempAudioPath,
+        'audio_$id.mp3',
+      );
+
+      try {
+        await File(tempAudioPath).delete();
+      } catch (_) {}
+
+      // Update local entry to include audio
+      await _localStorage.updateProblemLocally(id, {
+        'audioPath': savedAudioPath,
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ Saved to History'),
-          backgroundColor: AppColors.primary,
-          duration: Duration(seconds: 2),
-        ),
-      );
-    }
-  } catch (e) {
-    print('Error auto-saving to history: $e');
-    if (mounted) {
-      setState(() => _isGeneratingAudio = false);
+      // Update UI only if still on screen
+      if (mounted) {
+        setState(() {
+          _audioPath = savedAudioPath;
+          _isGeneratingAudio = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Saved to History'),
+            backgroundColor: AppColors.primary,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error auto-saving to history: $e');
+      if (mounted) {
+        setState(() => _isGeneratingAudio = false);
+      }
     }
   }
-}
-
 
   /// Formats duration to MM:SS
   String _formatDuration(Duration duration) {
@@ -753,10 +755,7 @@ Future<void> _autoSaveToHistory() async {
             ],
           ),
           const SizedBox(height: 8),
-          Text(
-            _error,
-            style: const TextStyle(color: Colors.white),
-          ),
+          Text(_error, style: const TextStyle(color: Colors.white)),
           const SizedBox(height: 16),
           const Text(
             'An error occured while processing your problem\n'
