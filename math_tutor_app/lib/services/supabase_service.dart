@@ -22,10 +22,7 @@ class SupabaseService {
 
   /// Initialize Supabase (call this in main.dart)
   static Future<void> initialize() async {
-    await Supabase.initialize(
-      url: SUPABASE_URL,
-      anonKey: SUPABASE_ANON_KEY,
-    );
+    await Supabase.initialize(url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY);
   }
 
   // ============== AUTHENTICATION ==============
@@ -95,19 +92,14 @@ class SupabaseService {
   }
 
   /// Update user profile
-  Future<void> updateProfile({
-    String? fullName,
-  }) async {
+  Future<void> updateProfile({String? fullName}) async {
     if (currentUser == null) throw Exception('No user logged in');
 
     final updates = <String, dynamic>{};
     if (fullName != null) updates['full_name'] = fullName;
 
     if (updates.isNotEmpty) {
-      await client
-          .from('profiles')
-          .update(updates)
-          .eq('id', currentUser!.id);
+      await client.from('profiles').update(updates).eq('id', currentUser!.id);
     }
   }
 
@@ -130,22 +122,42 @@ class SupabaseService {
   Future<List<Map<String, dynamic>>> getTopSkills({int limit = 2}) async {
     final skills = await getUserSkills();
 
-    // Calculate percentage for each skill
-    final skillsWithPercentage = skills.map((skill) {
-      final attempted = skill['problems_attempted'] as int;
-      final solved = skill['problems_solved'] as int;
-      final percentage = attempted > 0 ? (solved / attempted * 100).round() : 0;
+    // Percentage should represent distribution of solved/attempted problems
+    // across skills, not per-skill accuracy.
+    final totalAttempted = skills.fold<int>(
+      0,
+      (sum, skill) => sum + ((skill['problems_attempted'] as int?) ?? 0),
+    );
 
-      return {
-        ...skill,
-        'percentage': percentage,
-      };
+    // Calculate usage share for each skill.
+    final skillsWithPercentage = skills.map((skill) {
+      final attempted = (skill['problems_attempted'] as int?) ?? 0;
+      final percentage = totalAttempted > 0
+          ? (attempted / totalAttempted * 100)
+          : 0.0;
+
+      return {...skill, 'percentage': percentage};
     }).toList();
 
-    // Sort by last practiced (most recent first)
+    // Sort by usage share (highest first), then by most recently practiced.
     skillsWithPercentage.sort((a, b) {
-      final aDate = DateTime.parse(a['last_practiced'] as String);
-      final bDate = DateTime.parse(b['last_practiced'] as String);
+      final aPct = (a['percentage'] as num).toDouble();
+      final bPct = (b['percentage'] as num).toDouble();
+      final pctCmp = bPct.compareTo(aPct);
+      if (pctCmp != 0) return pctCmp;
+
+      final aDateRaw = a['last_practiced'];
+      final bDateRaw = b['last_practiced'];
+      final aDate = aDateRaw is String
+          ? DateTime.tryParse(aDateRaw)
+          : aDateRaw as DateTime?;
+      final bDate = bDateRaw is String
+          ? DateTime.tryParse(bDateRaw)
+          : bDateRaw as DateTime?;
+
+      if (aDate == null && bDate == null) return 0;
+      if (aDate == null) return 1;
+      if (bDate == null) return -1;
       return bDate.compareTo(aDate);
     });
 
@@ -171,13 +183,16 @@ class SupabaseService {
 
     if (existing != null) {
       // Update existing skill
-      await client.from('skills').update({
-        'problems_attempted': (existing['problems_attempted'] as int) + 1,
-        'problems_solved': wasSolved
-            ? (existing['problems_solved'] as int) + 1
-            : existing['problems_solved'],
-        'last_practiced': DateTime.now().toIso8601String(),
-      }).eq('id', existing['id']);
+      await client
+          .from('skills')
+          .update({
+            'problems_attempted': (existing['problems_attempted'] as int) + 1,
+            'problems_solved': wasSolved
+                ? (existing['problems_solved'] as int) + 1
+                : existing['problems_solved'],
+            'last_practiced': DateTime.now().toIso8601String(),
+          })
+          .eq('id', existing['id']);
     } else {
       // Create new skill
       await client.from('skills').insert({
@@ -195,32 +210,31 @@ class SupabaseService {
 
   /// Save a solved problem to history
   Future<void> saveProblemToHistory({
-  required String imagePath,
-  required List<SolutionBlock> solution,
-  String? skillCategory,
-  String? skillName,
-}) async {
-  if (currentUser == null) throw Exception('No user logged in');
+    required String imagePath,
+    required List<SolutionBlock> solution,
+    String? skillCategory,
+    String? skillName,
+  }) async {
+    if (currentUser == null) throw Exception('No user logged in');
 
-  final solutionJson = solution.map((block) => block.toJson()).toList();
+    final solutionJson = solution.map((block) => block.toJson()).toList();
 
-  try {
-    await client.from('problem_history').insert({
-      'user_id': currentUser!.id,
-      'image_path': imagePath,
-      'solution_data': solutionJson,
-      'skill_category': skillCategory,
-      'skill_name': skillName,
-      'solved_at': DateTime.now().toIso8601String(),
-    });
-  } on PostgrestException catch (e) {
-    print('SUPABASE INSERT ERROR: ${e.code}');
-    print('Message: ${e.message}');
-    print('Details: ${e.details}');
-    rethrow;
+    try {
+      await client.from('problem_history').insert({
+        'user_id': currentUser!.id,
+        'image_path': imagePath,
+        'solution_data': solutionJson,
+        'skill_category': skillCategory,
+        'skill_name': skillName,
+        'solved_at': DateTime.now().toIso8601String(),
+      });
+    } on PostgrestException catch (e) {
+      print('SUPABASE INSERT ERROR: ${e.code}');
+      print('Message: ${e.message}');
+      print('Details: ${e.details}');
+      rethrow;
+    }
   }
-}
-
 
   /// Get problem history for the current user
   /// Can filter by date
@@ -236,17 +250,29 @@ class SupabaseService {
         .eq('user_id', currentUser!.id)
         .order('solved_at', ascending: false);
 
-    List<Map<String, dynamic>> results = List<Map<String, dynamic>>.from(response);
+    List<Map<String, dynamic>> results = List<Map<String, dynamic>>.from(
+      response,
+    );
 
     // Filter by date in Dart if needed
     if (startDate != null || endDate != null) {
+      final start = startDate?.toLocal();
+      final end = endDate?.toLocal();
       results = results.where((problem) {
-        final solvedAt = DateTime.parse(problem['solved_at'] as String);
-        
-        if (startDate != null && solvedAt.isBefore(startDate)) {
+        final rawSolvedAt = problem['solved_at'];
+        DateTime? solvedAt;
+        if (rawSolvedAt is DateTime) {
+          solvedAt = rawSolvedAt.toLocal();
+        } else if (rawSolvedAt is String && rawSolvedAt.isNotEmpty) {
+          solvedAt = DateTime.tryParse(rawSolvedAt)?.toLocal();
+        }
+
+        if (solvedAt == null) return false;
+
+        if (start != null && solvedAt.isBefore(start)) {
           return false;
         }
-        if (endDate != null && solvedAt.isAfter(endDate)) {
+        if (end != null && solvedAt.isAfter(end)) {
           return false;
         }
         return true;
@@ -262,20 +288,14 @@ class SupabaseService {
     final startOfDay = DateTime(now.year, now.month, now.day);
     final endOfDay = startOfDay.add(const Duration(days: 1));
 
-    return await getProblemHistory(
-      startDate: startOfDay,
-      endDate: endOfDay,
-    );
+    return await getProblemHistory(startDate: startOfDay, endDate: endOfDay);
   }
 
   /// Delete a problem from history
   Future<void> deleteProblem(String problemId) async {
     if (currentUser == null) throw Exception('No user logged in');
 
-    await client
-        .from('problem_history')
-        .delete()
-        .eq('id', problemId);
+    await client.from('problem_history').delete().eq('id', problemId);
   }
 
   /// Delete all history

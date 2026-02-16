@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter_math_fork/flutter_math.dart';
 import '../constants/colors.dart';
 import '../services/openai_service.dart';
 import '../services/local_storage_service.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'dart:math';
 
 /// Screen that displays a saved problem from history
 /// Shows the original image and the solution
@@ -30,39 +30,44 @@ class SolutionDetailScreen extends StatefulWidget {
 class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
   final _localStorage = LocalStorageService();
   final _openAIService = OpenAIService();
-  
+
   // Audio playback
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isGeneratingAudio = false;
   bool _isPlayingAudio = false;
+  PlayerState _playerState = PlayerState.stopped;
   String? _audioPath;
   Duration _audioDuration = Duration.zero;
   Duration _audioPosition = Duration.zero;
-  
+
   // Expanded steps tracking
   final Map<int, bool> _expandedSteps = {};
 
   @override
   void initState() {
     super.initState();
-    
+
     // Use the provided audio path if available
     _audioPath = widget.audioPath;
-    
+
     // Setup audio listeners
     _audioPlayer.onPlayerStateChanged.listen((state) {
+      if (!mounted) return;
       setState(() {
+        _playerState = state;
         _isPlayingAudio = state == PlayerState.playing;
       });
     });
-    
+
     _audioPlayer.onDurationChanged.listen((duration) {
+      if (!mounted) return;
       setState(() {
         _audioDuration = duration;
       });
     });
-    
+
     _audioPlayer.onPositionChanged.listen((position) {
+      if (!mounted) return;
       setState(() {
         _audioPosition = position;
       });
@@ -79,7 +84,7 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
   /// Generate and play audio explanation
   Future<void> _generateAndPlayAudio() async {
     if (widget.solution.isEmpty) return;
-    
+
     setState(() {
       _isGeneratingAudio = true;
     });
@@ -90,32 +95,34 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
         await _audioPlayer.play(DeviceFileSource(_audioPath!));
       } else {
         // Generate new audio
-        final tempAudioPath = await _openAIService.generateAudioExplanation(widget.solution);
-        
+        final tempAudioPath = await _openAIService.generateAudioExplanation(
+          widget.solution,
+        );
+
         // Persist to history directory
         final docsDir = await getApplicationDocumentsDirectory();
         final historyDir = Directory('${docsDir.path}/mathtutor_history');
         if (!await historyDir.exists()) {
           await historyDir.create(recursive: true);
         }
-        final savedAudioPath = '${historyDir.path}/audio_${widget.problemId}.mp3';
+        final savedAudioPath =
+            '${historyDir.path}/audio_${widget.problemId}.mp3';
         await File(tempAudioPath).copy(savedAudioPath);
-        
+
         // Delete temp file
         try {
           await File(tempAudioPath).delete();
         } catch (_) {}
-        
+
         setState(() {
           _audioPath = savedAudioPath;
         });
-        
+
         // Update history entry with audio path
-        await _localStorage.updateProblemLocally(
-          widget.problemId,
-          {'audioPath': savedAudioPath},
-        );
-        
+        await _localStorage.updateProblemLocally(widget.problemId, {
+          'audioPath': savedAudioPath,
+        });
+
         await _audioPlayer.play(DeviceFileSource(savedAudioPath));
       }
     } catch (e) {
@@ -137,8 +144,12 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
   Future<void> _toggleAudioPlayback() async {
     if (_isPlayingAudio) {
       await _audioPlayer.pause();
-    } else if (_audioPath != null) {
-      await _audioPlayer.resume();
+    } else if (_audioPath != null && await File(_audioPath!).exists()) {
+      if (_playerState == PlayerState.paused) {
+        await _audioPlayer.resume();
+      } else {
+        await _audioPlayer.play(DeviceFileSource(_audioPath!));
+      }
     } else {
       await _generateAndPlayAudio();
     }
@@ -160,7 +171,10 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.textGrey)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.textGrey),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
@@ -187,16 +201,13 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
         continue;
       }
 
-      if (block.type == 'header' && 
-          (block.text.toLowerCase().contains('step') || 
-           block.text.toLowerCase().startsWith('step'))) {
+      if (block.type == 'header' &&
+          (block.text.toLowerCase().contains('step') ||
+              block.text.toLowerCase().startsWith('step'))) {
         if (currentStep != null) {
           steps.add(currentStep);
         }
-        currentStep = {
-          'title': block.text,
-          'blocks': <SolutionBlock>[],
-        };
+        currentStep = {'title': block.text, 'blocks': <SolutionBlock>[]};
       } else if (currentStep != null) {
         (currentStep['blocks'] as List<SolutionBlock>).add(block);
       }
@@ -237,10 +248,7 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
                 constraints: const BoxConstraints(maxHeight: 300),
                 color: Colors.black,
                 child: File(widget.imagePath).existsSync()
-                    ? Image.file(
-                        File(widget.imagePath),
-                        fit: BoxFit.contain,
-                      )
+                    ? Image.file(File(widget.imagePath), fit: BoxFit.contain)
                     : Container(
                         height: 200,
                         alignment: Alignment.center,
@@ -262,9 +270,9 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
                       ),
               ),
             ),
-            
+
             const SizedBox(height: 24),
-            
+
             // Audio button
             Center(
               child: ElevatedButton.icon(
@@ -279,11 +287,13 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
                         ),
                       )
                     : Icon(_isPlayingAudio ? Icons.pause : Icons.play_arrow),
-                label: Text(_isGeneratingAudio
-                    ? 'Generating...'
-                    : _isPlayingAudio
-                        ? 'Pause Explanation'
-                        : 'Play Explanation'),
+                label: Text(
+                  _isGeneratingAudio
+                      ? 'Generating...'
+                      : _isPlayingAudio
+                      ? 'Pause Explanation'
+                      : 'Play Explanation',
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   padding: const EdgeInsets.symmetric(
@@ -296,15 +306,15 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
                 ),
               ),
             ),
-            
+
             // Audio progress
             if (_audioPath != null) ...[
               const SizedBox(height: 16),
               _buildAudioProgress(),
             ],
-            
+
             const SizedBox(height: 32),
-            
+
             // Solution steps
             const Text(
               'Solution',
@@ -314,9 +324,9 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
                 color: AppColors.textWhite,
               ),
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             _buildStepsDropdown(),
           ],
         ),
@@ -325,6 +335,14 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
   }
 
   Widget _buildAudioProgress() {
+    final maxSeconds = _audioDuration.inSeconds > 0
+        ? _audioDuration.inSeconds.toDouble()
+        : 1.0;
+    final currentSeconds = _audioPosition.inSeconds.toDouble().clamp(
+      0.0,
+      maxSeconds,
+    );
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -334,10 +352,8 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
       child: Column(
         children: [
           Slider(
-            value: _audioPosition.inSeconds.toDouble(),
-            max: _audioDuration.inSeconds.toDouble() > 0
-                ? _audioDuration.inSeconds.toDouble()
-                : 1,
+            value: currentSeconds,
+            max: maxSeconds,
             activeColor: AppColors.primary,
             inactiveColor: AppColors.textGrey.withOpacity(0.3),
             onChanged: (value) async {
@@ -364,7 +380,7 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
 
   Widget _buildStepsDropdown() {
     final steps = _groupIntoSteps();
-    
+
     return Column(
       children: List.generate(steps.length, (index) {
         final step = steps[index];
@@ -415,7 +431,7 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
                   ),
                 ),
               ),
-              
+
               if (isExpanded)
                 Container(
                   padding: const EdgeInsets.all(16),
@@ -454,7 +470,7 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
             ),
           ),
         );
-      
+
       case 'equation':
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
@@ -462,22 +478,16 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
           decoration: BoxDecoration(
             color: AppColors.primary.withOpacity(0.1),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: AppColors.primary.withOpacity(0.3),
-            ),
+            border: Border.all(color: AppColors.primary.withOpacity(0.3)),
           ),
-          child: Text(
-            block.text,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontFamily: 'monospace',
-              fontWeight: FontWeight.bold,
+          child: Center(
+            child: Math.tex(
+              block.text,
+              textStyle: const TextStyle(color: Colors.white, fontSize: 20),
             ),
-            textAlign: TextAlign.center,
           ),
         );
-      
+
       case 'question':
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
@@ -485,18 +495,12 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
           decoration: BoxDecoration(
             color: Colors.amber.withOpacity(0.1),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: Colors.amber.withOpacity(0.3),
-            ),
+            border: Border.all(color: Colors.amber.withOpacity(0.3)),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(
-                Icons.help_outline,
-                color: Colors.amber,
-                size: 20,
-              ),
+              const Icon(Icons.help_outline, color: Colors.amber, size: 20),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -511,7 +515,7 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
             ],
           ),
         );
-      
+
       default:
         return const SizedBox.shrink();
     }

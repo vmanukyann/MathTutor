@@ -37,6 +37,7 @@ class _SolutionScreenState extends State<SolutionScreen> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isGeneratingAudio = false;
   bool _isPlayingAudio = false;
+  PlayerState _playerState = PlayerState.stopped;
   String? _audioPath;
   Duration _audioDuration = Duration.zero;
   Duration _audioPosition = Duration.zero;
@@ -74,6 +75,7 @@ class _SolutionScreenState extends State<SolutionScreen> {
     _playerStateSub = _audioPlayer.onPlayerStateChanged.listen((state) {
       if (!mounted) return;
       setState(() {
+        _playerState = state;
         _isPlayingAudio = state == PlayerState.playing;
       });
     });
@@ -149,7 +151,7 @@ class _SolutionScreenState extends State<SolutionScreen> {
 
     try {
       // If we already have audio, just play it
-      if (_audioPath != null) {
+      if (_audioPath != null && await File(_audioPath!).exists()) {
         await _audioPlayer.play(DeviceFileSource(_audioPath!));
       } else {
         // Generate new audio
@@ -187,8 +189,13 @@ class _SolutionScreenState extends State<SolutionScreen> {
   Future<void> _toggleAudioPlayback() async {
     if (_isPlayingAudio) {
       await _audioPlayer.pause();
-    } else if (_audioPath != null) {
-      await _audioPlayer.resume();
+    } else if (_audioPath != null && await File(_audioPath!).exists()) {
+      if (_playerState == PlayerState.paused) {
+        await _audioPlayer.resume();
+      } else {
+        // Start from the beginning for stopped/completed states.
+        await _audioPlayer.play(DeviceFileSource(_audioPath!));
+      }
     } else {
       await _generateAndPlayAudio();
     }
@@ -408,6 +415,14 @@ class _SolutionScreenState extends State<SolutionScreen> {
 
   /// Builds the audio player controls
   Widget _buildAudioPlayerControls() {
+    final maxSeconds = _audioDuration.inSeconds > 0
+        ? _audioDuration.inSeconds.toDouble()
+        : 1.0;
+    final currentSeconds = _audioPosition.inSeconds.toDouble().clamp(
+      0.0,
+      maxSeconds,
+    );
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
@@ -431,8 +446,8 @@ class _SolutionScreenState extends State<SolutionScreen> {
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
             ),
             child: Slider(
-              value: _audioPosition.inSeconds.toDouble(),
-              max: _audioDuration.inSeconds.toDouble(),
+              value: currentSeconds,
+              max: maxSeconds,
               activeColor: AppColors.primary,
               inactiveColor: Colors.grey[700],
               onChanged: (value) async {
