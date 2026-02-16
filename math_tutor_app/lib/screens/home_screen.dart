@@ -16,7 +16,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, AutomaticKeepAliveClientMixin {
+class _HomeScreenState extends State<HomeScreen> {
   final _supabaseService = SupabaseService();
   
   // User data
@@ -28,77 +28,32 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   List<int> _weekCounts = List.filled(7, 0);
   bool _loadingWeek = true;
   
-  // Controllers for animations
-  late AnimationController _pulseController;
-  late AnimationController _floatController;
-  late Animation<double> _pulseAnimation;
-  late Animation<double> _floatAnimation;
-
-  @override
-  bool get wantKeepAlive => false; // Don't keep state alive, always refresh
+  // Stats
+  int _totalProblems = 0;
+  int _problemsThisWeek = 0;
 
   @override
   void initState() {
     super.initState();
-    
-    // Setup animations
-    _pulseController = AnimationController(
-      duration: const Duration(seconds: 2),
-      vsync: this,
-    )..repeat(reverse: true);
-    
-    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.08).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
-
-    _floatController = AnimationController(
-      duration: const Duration(seconds: 3),
-      vsync: this,
-    )..repeat(reverse: true);
-    
-    _floatAnimation = Tween<double>(begin: -10, end: 10).animate(
-      CurvedAnimation(parent: _floatController, curve: Curves.easeInOut),
-    );
-    
-    // Load user data
     _loadUserData();
     _loadWeeklyCounts();
+    _loadStats();
   }
 
-  @override
-  void dispose() {
-    _pulseController.dispose();
-    _floatController.dispose();
-    super.dispose();
-  }
-
-  // Add this method to refresh data when returning to screen
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _loadUserData();
     _loadWeeklyCounts();
+    _loadStats();
   }
 
   Future<void> _loadUserData() async {
     try {
-      // DEBUG: Check auth state
       final user = _supabaseService.currentUser;
-      final session = _supabaseService.currentSession;
-      
-      print('=== HOME SCREEN DEBUG ===');
-      print('uid=${user?.id} session=${session != null}');
-      
-      // Get user profile - force fresh data
       final profile = await _supabaseService.getUserProfile();
-      print('profile=$profile');
-      
-      // Get top skills
       final skills = await _supabaseService.getTopSkills(limit: 2);
-      
-      // Try to get name from auth metadata as fallback
       final metaName = user?.userMetadata?['full_name'] as String?;
-      print('metaName=$metaName');
       
       if (mounted) {
         setState(() {
@@ -108,7 +63,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         });
       }
     } catch (e) {
-      print('Error loading user data: $e');
       if (mounted) {
         setState(() {
           _userName = 'Student';
@@ -130,7 +84,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 
     final now = DateTime.now();
     final startOfWeek = DateTime(now.year, now.month, now.day)
-        .subtract(Duration(days: now.weekday - 1)); // Monday
+        .subtract(Duration(days: now.weekday - 1));
 
     try {
       final history = await _supabaseService.getProblemHistory(startDate: startOfWeek);
@@ -138,7 +92,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       final counts = List<int>.filled(7, 0);
       for (final item in history) {
         final solvedAt = DateTime.parse(item['solved_at'] as String).toLocal();
-        final index = solvedAt.weekday - 1; // Mon=0 ... Sun=6
+        final index = solvedAt.weekday - 1;
         if (index >= 0 && index < 7) counts[index]++;
       }
 
@@ -156,241 +110,221 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     }
   }
 
+  Future<void> _loadStats() async {
+    if (!_supabaseService.isLoggedIn) {
+      if (!mounted) return;
+      setState(() {
+        _totalProblems = 0;
+        _problemsThisWeek = 0;
+      });
+      return;
+    }
+
+    try {
+      final stats = await _supabaseService.getUserStats();
+      if (mounted) {
+        setState(() {
+          _totalProblems = stats['total_problems'] ?? 0;
+          _problemsThisWeek = stats['problems_this_week'] ?? 0;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _totalProblems = 0;
+          _problemsThisWeek = 0;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    super.build(context); // Required for AutomaticKeepAliveClientMixin
-    
     return Scaffold(
-      body: Stack(
-        children: [
-          // Dark gradient background
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFF000000),
-                  Color(0xFF0A0A0A),
-                  Color(0xFF000000),
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: () async {
+            await _loadUserData();
+            await _loadWeeklyCounts();
+            await _loadStats();
+          },
+          color: AppColors.primary,
+          backgroundColor: AppColors.cardBackground,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header with greeting
+                  _buildHeader(),
+                  
+                  const SizedBox(height: 32),
+                  
+                  // Stats cards
+                  _buildStatsRow(),
+                  
+                  const SizedBox(height: 24),
+                  
+                  // Weekly activity chart
+                  _buildWeeklyActivityCard(),
+                  
+                  const SizedBox(height: 24),
+                  
+                  // Skills progress (if available)
+                  if (_topSkills.isNotEmpty) ...[
+                    _buildSkillsCard(),
+                    const SizedBox(height: 24),
+                  ],
+                  
+                  // Main scan button
+                  _buildScanButton(),
+                  
+                  const SizedBox(height: 24),
                 ],
               ),
             ),
           ),
-          
-          // Floating math symbols
-          ...List.generate(5, (index) {
-            return AnimatedBuilder(
-              animation: _floatAnimation,
-              builder: (context, child) {
-                return Positioned(
-                  top: 100 + (index * 120.0) + _floatAnimation.value,
-                  left: index.isEven ? 30 : null,
-                  right: index.isOdd ? 30 : null,
-                  child: Opacity(
-                    opacity: 0.05,
-                    child: Text(
-                      ['∑', '∫', 'π', '√', '∞'][index],
-                      style: const TextStyle(
-                        fontSize: 60,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ),
-                );
-              },
-            );
-          }),
+        ),
+      ),
+    );
+  }
 
-          SafeArea(
-            child: Column(
+  Widget _buildHeader() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // Logo/Title
+            Row(
               children: [
-                // Top header
-                Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      // App icon
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.calculate, 
-                          color: AppColors.primary, size: 24),
-                      ),
-                      
-                      // App name
-                      const Text(
-                        'MathTutor',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textWhite,
-                        ),
-                      ),
-                      
-                      // Profile/Settings button
-                      IconButton(
-                        icon: const Icon(Icons.person, 
-                          color: AppColors.textGrey),
-                        onPressed: () {
-                          // Navigate to settings (handled by bottom nav)
-                        },
-                      ),
-                    ],
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.calculate,
+                    color: Colors.white,
+                    size: 24,
                   ),
                 ),
-                
-                // Main content - now scrollable
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 20),
-                        
-                        // Personalized greeting
-                        _isLoading
-                            ? const SizedBox(height: 40)
-                            : Column(
-                                children: [
-                                  Text(
-                                    'Hi, $_userName',
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      fontSize: 28,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.primary,
-                                      letterSpacing: -0.5,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  
-                                  // Skills progress (if available)
-                                  if (_topSkills.isNotEmpty) ...[
-                                    _buildSkillsProgress(),
-                                    const SizedBox(height: 16),
-                                  ],
-                                  
-                                  // Weekly chart
-                                  _buildWeeklyChartCard(),
-                                  const SizedBox(height: 24),
-                                ],
-                              ),
-                        
-                        // Main headline
-                        const Text(
-                          'Ready to learn?',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 40,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                            letterSpacing: -0.5,
-                            height: 1.1,
-                          ),
-                        ),
-                        
-                        const SizedBox(height: 12),
-                        
-                        // Subtitle
-                        Text(
-                          'Scan any problem to get started',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 17,
-                            color: Colors.white.withOpacity(0.6),
-                            fontWeight: FontWeight.w400,
-                            letterSpacing: -0.2,
-                          ),
-                        ),
-                        
-                        const SizedBox(height: 60),
-
-                        // Big circular scan button
-                        ScaleTransition(
-                          scale: _pulseAnimation,
-                          child: GestureDetector(
-                            onTap: () async {
-                              await Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => ScanScreen(cameras: widget.cameras),
-                                ),
-                              );
-
-                              _loadUserData();
-                              _loadWeeklyCounts();
-                            },
-                            child: Container(
-                              width: 200,
-                              height: 200,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: AppColors.primary,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: AppColors.primary.withOpacity(0.3),
-                                    blurRadius: 40,
-                                    spreadRadius: 0,
-                                  ),
-                                ],
-                              ),
-                              child: const Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.camera_alt_rounded, 
-                                    size: 56, color: Colors.white),
-                                  SizedBox(height: 12),
-                                  Text(
-                                    'Scan',
-                                    style: TextStyle(
-                                      fontSize: 19,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.white,
-                                      letterSpacing: -0.3,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        
-                        const SizedBox(height: 50),
-
-                        // Secondary action buttons
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            _QuickActionButton(
-                              icon: Icons.keyboard_outlined,
-                              label: 'Type',
-                              onTap: () {
-                                // TODO: open keyboard input screen
-                              },
-                            ),
-                            const SizedBox(width: 20),
-                            _QuickActionButton(
-                              icon: Icons.photo_library_outlined,
-                              label: 'Upload',
-                              onTap: () {
-                                // TODO: open image picker
-                              },
-                            ),
-                          ],
-                        ),
-                        
-                        const SizedBox(height: 40),
-                      ],
-                    ),
+                const SizedBox(width: 12),
+                const Text(
+                  'MathTutor',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
                   ),
                 ),
               ],
+            ),
+            
+            // Settings icon
+            IconButton(
+              icon: const Icon(Icons.settings, color: Colors.white70),
+              onPressed: () {
+                // Navigate to settings
+              },
+            ),
+          ],
+        ),
+        
+        const SizedBox(height: 24),
+        
+        // Greeting
+        if (!_isLoading) ...[
+          Text(
+            'Hello, $_userName 👋',
+            style: const TextStyle(
+              fontSize: 32,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Let\'s solve some problems today',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.white.withOpacity(0.6),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildStatsRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildStatCard(
+            'Total Solved',
+            _totalProblems.toString(),
+            Icons.check_circle_outline,
+            AppColors.primary,
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: _buildStatCard(
+            'This Week',
+            _problemsThisWeek.toString(),
+            Icons.calendar_today,
+            const Color(0xFF4CAF50),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatCard(String label, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.white.withOpacity(0.6),
             ),
           ),
         ],
@@ -398,39 +332,54 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     );
   }
 
-  /// Builds the weekly chart card
-  Widget _buildWeeklyChartCard() {
+  Widget _buildWeeklyActivityCard() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.primary.withOpacity(0.2),
-          width: 1,
-        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.2),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'This Week',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Weekly Activity',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${_weekCounts.reduce((a, b) => a + b)} problems',
+                  style: const TextStyle(
+                    color: AppColors.primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
           SizedBox(
-            height: 180,
+            height: 200,
             child: _buildWeeklyChart(),
           ),
         ],
@@ -438,7 +387,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     );
   }
 
-  /// Builds the weekly bar chart
   Widget _buildWeeklyChart() {
     if (_loadingWeek) {
       return const Center(
@@ -447,138 +395,149 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     }
 
     final maxY = max(1, _weekCounts.reduce(max)).toDouble();
-    const labels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final today = DateTime.now().weekday - 1;
 
-    return AspectRatio(
-      aspectRatio: 1.8,
-      child: BarChart(
-        BarChartData(
-          maxY: maxY,
-          gridData: FlGridData(show: false),
-          borderData: FlBorderData(show: false),
-          titlesData: FlTitlesData(
-            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                getTitlesWidget: (value, meta) {
-                  final i = value.toInt();
-                  if (i < 0 || i > 6) return const SizedBox.shrink();
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      labels[i],
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
+    return BarChart(
+      BarChartData(
+        maxY: maxY,
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          horizontalInterval: maxY > 5 ? maxY / 5 : 1,
+          getDrawingHorizontalLine: (value) {
+            return FlLine(
+              color: Colors.white.withOpacity(0.05),
+              strokeWidth: 1,
+            );
+          },
+        ),
+        borderData: FlBorderData(show: false),
+        titlesData: FlTitlesData(
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              getTitlesWidget: (value, meta) {
+                final i = value.toInt();
+                if (i < 0 || i > 6) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    labels[i],
+                    style: TextStyle(
+                      color: i == today 
+                        ? AppColors.primary 
+                        : Colors.white.withOpacity(0.6),
+                      fontSize: 12,
+                      fontWeight: i == today ? FontWeight.bold : FontWeight.normal,
                     ),
-                  );
-                },
-              ),
+                  ),
+                );
+              },
             ),
           ),
-          barGroups: List.generate(7, (i) {
-            return BarChartGroupData(
-              x: i,
-              barRods: [
-                BarChartRodData(
-                  toY: _weekCounts[i].toDouble(),
-                  width: 16,
-                  borderRadius: BorderRadius.circular(6),
-                  gradient: LinearGradient(
-                    colors: [
-                      AppColors.primary,
-                      AppColors.primary.withOpacity(0.7),
-                    ],
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                  ),
-                ),
-              ],
-            );
-          }),
         ),
+        barGroups: List.generate(7, (i) {
+          final isToday = i == today;
+          return BarChartGroupData(
+            x: i,
+            barRods: [
+              BarChartRodData(
+                toY: _weekCounts[i].toDouble(),
+                width: 24,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(6),
+                  topRight: Radius.circular(6),
+                ),
+                gradient: LinearGradient(
+                  colors: isToday 
+                    ? [
+                        AppColors.primary,
+                        AppColors.primary.withOpacity(0.6),
+                      ]
+                    : [
+                        Colors.white.withOpacity(0.3),
+                        Colors.white.withOpacity(0.1),
+                      ],
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                ),
+              ),
+            ],
+          );
+        }),
       ),
     );
   }
 
-  /// Builds the skills progress widget
-  Widget _buildSkillsProgress() {
+  Widget _buildSkillsCard() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.primary.withOpacity(0.2),
-          width: 1,
-        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.2),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Currently working on:',
+          const Text(
+            'Skills Progress',
             style: TextStyle(
-              fontSize: 14,
-              color: AppColors.textGrey.withOpacity(0.7),
-              fontWeight: FontWeight.w500,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
           ...List.generate(_topSkills.length, (index) {
             final skill = _topSkills[index];
             final percentage = skill['percentage'] as int;
             final skillName = skill['skill_category'] as String;
             
             return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Percentage badge
-                  Container(
-                    width: 50,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '$percentage%',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: AppColors.primary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        skillName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
+                      Text(
+                        '$percentage%',
+                        style: const TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  
-                  // Skill name
-                  Expanded(
-                    child: Text(
-                      skillName,
-                      style: const TextStyle(
-                        color: AppColors.textWhite,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
-                      ),
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(
+                      value: percentage / 100,
+                      backgroundColor: Colors.white.withOpacity(0.1),
+                      valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                      minHeight: 8,
                     ),
                   ),
                 ],
@@ -589,42 +548,53 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       ),
     );
   }
-}
 
-// Quick action button widget
-class _QuickActionButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _QuickActionButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildScanButton() {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ScanScreen(cameras: widget.cameras),
+          ),
+        );
+        _loadUserData();
+        _loadWeeklyCounts();
+        _loadStats();
+      },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 20),
         decoration: BoxDecoration(
-          color: const Color(0xFF1C1C1E),
-          borderRadius: BorderRadius.circular(24),
+          gradient: const LinearGradient(
+            colors: [AppColors.primary, Color(0xFF3A7BD5)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withOpacity(0.4),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+          ],
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: Colors.white, size: 18),
-            const SizedBox(width: 10),
+            Icon(
+              Icons.camera_alt_rounded,
+              color: Colors.white,
+              size: 28,
+            ),
+            SizedBox(width: 12),
             Text(
-              label,
-              style: const TextStyle(
+              'Scan Problem',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
                 color: Colors.white,
-                fontWeight: FontWeight.w500,
-                fontSize: 16,
-                letterSpacing: -0.3,
               ),
             ),
           ],
