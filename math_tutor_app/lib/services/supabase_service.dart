@@ -25,7 +25,6 @@ class SupabaseService {
     await Supabase.initialize(url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY);
   }
 
-  // ============== AUTHENTICATION ==============
 
   /// Sign up a new user with school email
   Future<AuthResponse> signUp({
@@ -76,8 +75,6 @@ class SupabaseService {
     await client.auth.resetPasswordForEmail(email);
   }
 
-  // ============== USER PROFILE ==============
-
   /// Get user profile data
   Future<Map<String, dynamic>?> getUserProfile() async {
     if (currentUser == null) return null;
@@ -102,8 +99,6 @@ class SupabaseService {
       await client.from('profiles').update(updates).eq('id', currentUser!.id);
     }
   }
-
-  // ============== SKILLS TRACKING ==============
 
   /// Get all skills for the current user
   Future<List<Map<String, dynamic>>> getUserSkills() async {
@@ -206,7 +201,7 @@ class SupabaseService {
     }
   }
 
-  // ============== PROBLEM HISTORY ==============
+
 
   /// Save a solved problem to history
   Future<void> saveProblemToHistory({
@@ -295,14 +290,7 @@ class SupabaseService {
   Future<void> deleteProblem(String problemId) async {
     if (currentUser == null) throw Exception('No user logged in');
 
-    final parsedId = int.tryParse(problemId);
-    final idValue = parsedId ?? problemId;
-
-    await client
-        .from('problem_history')
-        .delete()
-        .eq('user_id', currentUser!.id)
-        .eq('id', idValue);
+    await client.from('problem_history').delete().eq('id', problemId);
   }
 
   /// Delete all history
@@ -315,7 +303,6 @@ class SupabaseService {
         .eq('user_id', currentUser!.id);
   }
 
-  // ============== STATISTICS ==============
 
   /// Get user statistics
   Future<Map<String, dynamic>> getUserStats() async {
