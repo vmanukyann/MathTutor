@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'dart:io';
 import 'dart:math';
 import '../constants/colors.dart';
+import '../services/local_storage_service.dart';
 import '../services/supabase_service.dart';
 import 'scan_screen.dart';
 
@@ -18,9 +20,11 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _supabaseService = SupabaseService();
+  final _localStorage = LocalStorageService();
 
   // User data
   String _userName = '';
+  String? _profileImagePath;
   List<Map<String, dynamic>> _topSkills = [];
   bool _isLoading = true;
 
@@ -35,9 +39,18 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _localStorage.profileImagePathNotifier.addListener(_onProfileImageUpdated);
     _loadUserData();
     _loadWeeklyCounts();
     _loadStats();
+  }
+
+  @override
+  void dispose() {
+    _localStorage.profileImagePathNotifier.removeListener(
+      _onProfileImageUpdated,
+    );
+    super.dispose();
   }
 
   @override
@@ -88,11 +101,14 @@ class _HomeScreenState extends State<HomeScreen> {
       final user = _supabaseService.currentUser;
       final profile = await _supabaseService.getUserProfile();
       final skills = await _supabaseService.getTopSkills(limit: 2);
+      final profileImagePath = await _localStorage.getProfileImagePath();
       final metaName = user?.userMetadata?['full_name'] as String?;
 
       if (mounted) {
         setState(() {
-          _userName = (profile?['full_name'] as String?) ?? metaName ?? 'Student';
+          _userName =
+              (profile?['full_name'] as String?) ?? metaName ?? 'Student';
+          _profileImagePath = profileImagePath;
           _topSkills = skills;
           _isLoading = false;
         });
@@ -101,10 +117,75 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         setState(() {
           _userName = 'Student';
+          _profileImagePath = _localStorage.profileImagePathNotifier.value;
           _isLoading = false;
         });
       }
     }
+  }
+
+  void _onProfileImageUpdated() {
+    if (!mounted) return;
+    setState(() {
+      _profileImagePath = _localStorage.profileImagePathNotifier.value;
+    });
+  }
+
+  static const Map<String, List<String>> _specificSkillsByCategory = {
+    'Algebra': [
+      'Linear Systems of Equations',
+      'Linear Inequalities',
+      'Slope-Intercept Form',
+    ],
+    'Arithmetic': [
+      'Fractions and Decimals',
+      'Percent Word Problems',
+      'Ratio and Proportion',
+    ],
+    'Geometry': [
+      'Triangle Angle Relationships',
+      'Area and Perimeter',
+      'Pythagorean Theorem',
+    ],
+    'Statistics': [
+      'Mean, Median, and Mode',
+      'Interpreting Data Tables',
+      'Probability Basics',
+    ],
+    'Functions': [
+      'Function Notation',
+      'Evaluating Functions',
+      'Graphing Linear Functions',
+    ],
+    'Trigonometry': [
+      'Right Triangle Ratios',
+      'Sine, Cosine, and Tangent',
+      'Finding Missing Sides',
+    ],
+    'Calculus': ['Derivative Rules', 'Rate of Change', 'Tangent Lines'],
+    'Other': [
+      'Linear Inequalities',
+      'Equation Simplification',
+      'Word Problem Translation',
+    ],
+  };
+
+  String _specificSkillLabel(Map<String, dynamic> skill, int index) {
+    final rawCategory = (skill['skill_category'] as String?) ?? 'Other';
+    final normalizedCategory = _specificSkillsByCategory.keys.firstWhere(
+      (key) => key.toLowerCase() == rawCategory.toLowerCase(),
+      orElse: () => 'Other',
+    );
+    final options =
+        _specificSkillsByCategory[normalizedCategory] ??
+        _specificSkillsByCategory['Other']!;
+
+    final seedSource =
+        (skill['skill_name'] as String?) ??
+        (skill['id']?.toString()) ??
+        '$normalizedCategory-$index';
+    final seed = seedSource.hashCode.abs();
+    return options[seed % options.length];
   }
 
   Future<void> _loadWeeklyCounts() async {
@@ -118,11 +199,16 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final now = DateTime.now();
-    final startOfWeek = DateTime(now.year, now.month, now.day)
-        .subtract(Duration(days: now.weekday - 1));
+    final startOfWeek = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(Duration(days: now.weekday - 1));
 
     try {
-      final history = await _supabaseService.getProblemHistory(startDate: startOfWeek);
+      final history = await _supabaseService.getProblemHistory(
+        startDate: startOfWeek,
+      );
 
       final counts = List<int>.filled(7, 0);
       for (final item in history) {
@@ -228,6 +314,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildHeader() {
+    final hasProfileImage =
+        _profileImagePath != null && File(_profileImagePath!).existsSync();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -261,12 +350,27 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
 
-            // Settings icon
-            IconButton(
-              icon: const Icon(Icons.settings, color: Colors.white70),
-              onPressed: () {
-                // Navigate to settings
-              },
+            // Static profile avatar
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.2),
+                shape: BoxShape.circle,
+                image: hasProfileImage
+                    ? DecorationImage(
+                        image: FileImage(File(_profileImagePath!)),
+                        fit: BoxFit.cover,
+                      )
+                    : null,
+                border: Border.all(
+                  color: AppColors.primary.withOpacity(0.5),
+                  width: 1.5,
+                ),
+              ),
+              child: hasProfileImage
+                  ? null
+                  : const Icon(Icons.person, color: AppColors.primary),
             ),
           ],
         ),
@@ -321,7 +425,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildStatCard(String label, String value, IconData icon, Color color) {
+  Widget _buildStatCard(
+    String label,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -397,7 +506,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.primary.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(12),
@@ -414,10 +526,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
           const SizedBox(height: 24),
-          SizedBox(
-            height: 200,
-            child: _buildWeeklyChart(),
-          ),
+          SizedBox(height: 200, child: _buildWeeklyChart()),
         ],
       ),
     );
@@ -450,9 +559,15 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         borderData: FlBorderData(show: false),
         titlesData: FlTitlesData(
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          leftTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
@@ -468,7 +583,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           ? AppColors.primary
                           : Colors.white.withOpacity(0.6),
                       fontSize: 12,
-                      fontWeight: i == today ? FontWeight.bold : FontWeight.normal,
+                      fontWeight: i == today
+                          ? FontWeight.bold
+                          : FontWeight.normal,
                     ),
                   ),
                 );
@@ -490,10 +607,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 gradient: LinearGradient(
                   colors: isToday
-                      ? [
-                          AppColors.primary,
-                          AppColors.primary.withOpacity(0.6),
-                        ]
+                      ? [AppColors.primary, AppColors.primary.withOpacity(0.6)]
                       : [
                           Colors.white.withOpacity(0.3),
                           Colors.white.withOpacity(0.1),
@@ -538,11 +652,11 @@ class _HomeScreenState extends State<HomeScreen> {
           ...List.generate(_topSkills.length, (index) {
             final skill = _topSkills[index];
             final rawPercentage = skill['percentage'];
-            final percentage = (rawPercentage is num) ? rawPercentage.round() : 0;
+            final percentage = (rawPercentage is num)
+                ? rawPercentage.round()
+                : 0;
 
-            final rawSkillName = skill['skill_category'];
-            final skillName = rawSkillName?.toString() ?? 'Unknown';
-
+            final skillName = _specificSkillLabel(skill, index);
 
             return Padding(
               padding: const EdgeInsets.only(bottom: 16),
@@ -576,7 +690,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: LinearProgressIndicator(
                       value: percentage / 100,
                       backgroundColor: Colors.white.withOpacity(0.1),
-                      valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        AppColors.primary,
+                      ),
                       minHeight: 8,
                     ),
                   ),
@@ -623,11 +739,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: const Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.camera_alt_rounded,
-              color: Colors.white,
-              size: 28,
-            ),
+            Icon(Icons.camera_alt_rounded, color: Colors.white, size: 28),
             SizedBox(width: 12),
             Text(
               'Scan Problem',

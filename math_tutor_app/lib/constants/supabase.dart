@@ -7,7 +7,7 @@ const List<String> ALLOWED_SCHOOL_DOMAINS = [
   'k12.in.us',          // Indiana K-12 schools
   'edu',                // General education domain
   'student.edu',        // Student email domains
-  // Add more school domains as needed
+  
 ];
 
 /// Function to validate if an email is from an allowed school domain

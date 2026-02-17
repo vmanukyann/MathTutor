@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'openai_service.dart';
 
@@ -8,6 +9,10 @@ class LocalStorageService {
   static final LocalStorageService _instance = LocalStorageService._internal();
   factory LocalStorageService() => _instance;
   LocalStorageService._internal();
+
+  // Broadcasts profile image path changes so UI (Home/Settings) can stay in sync.
+  final ValueNotifier<String?> profileImagePathNotifier =
+      ValueNotifier<String?>(null);
 
   static const String _historyKey = 'problem_history';
   static const String _userKey = 'current_user';
@@ -30,8 +35,33 @@ class LocalStorageService {
   Future<void> clearUserData() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_userKey);
+    profileImagePathNotifier.value = null;
   }
 
+  /// Save/update profile image path in local user data.
+  Future<void> setProfileImagePath(String? imagePath) async {
+    final current = await getUserData() ?? <String, dynamic>{};
+
+    if (imagePath == null || imagePath.isEmpty) {
+      current.remove('profile_image_path');
+      profileImagePathNotifier.value = null;
+    } else {
+      current['profile_image_path'] = imagePath;
+      profileImagePathNotifier.value = imagePath;
+    }
+
+    await saveUserData(current);
+  }
+
+  /// Read profile image path from local user data.
+  Future<String?> getProfileImagePath() async {
+    final data = await getUserData();
+    final imagePath = data?['profile_image_path'] as String?;
+    if (profileImagePathNotifier.value != imagePath) {
+      profileImagePathNotifier.value = imagePath;
+    }
+    return imagePath;
+  }
 
   /// Save problem to local history
   Future<void> saveProblemLocally({
@@ -43,10 +73,10 @@ class LocalStorageService {
     String? skillName,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    
+
     // Get existing history
     final historyJson = prefs.getString(_historyKey);
-    final List<dynamic> history = historyJson != null 
+    final List<dynamic> history = historyJson != null
         ? jsonDecode(historyJson) as List<dynamic>
         : [];
 
@@ -69,13 +99,18 @@ class LocalStorageService {
   }
 
   /// Update an existing problem in local history
-  Future<void> updateProblemLocally(String id, Map<String, dynamic> updates) async {
+  Future<void> updateProblemLocally(
+    String id,
+    Map<String, dynamic> updates,
+  ) async {
     final prefs = await SharedPreferences.getInstance();
     final historyJson = prefs.getString(_historyKey);
     if (historyJson == null) return;
 
     final List<dynamic> history = jsonDecode(historyJson) as List<dynamic>;
-    final index = history.indexWhere((p) => (p as Map<String, dynamic>)['id'] == id);
+    final index = history.indexWhere(
+      (p) => (p as Map<String, dynamic>)['id'] == id,
+    );
     if (index == -1) return;
 
     final current = Map<String, dynamic>.from(history[index] as Map);
@@ -89,9 +124,9 @@ class LocalStorageService {
   Future<List<Map<String, dynamic>>> getLocalHistory() async {
     final prefs = await SharedPreferences.getInstance();
     final historyJson = prefs.getString(_historyKey);
-    
+
     if (historyJson == null) return [];
-    
+
     final List<dynamic> history = jsonDecode(historyJson) as List<dynamic>;
     return history.cast<Map<String, dynamic>>();
   }
@@ -122,9 +157,9 @@ class LocalStorageService {
   Future<void> deleteProblemLocally(String id) async {
     final prefs = await SharedPreferences.getInstance();
     final history = await getLocalHistory();
-    
+
     history.removeWhere((problem) => problem['id'] == id);
-    
+
     await prefs.setString(_historyKey, jsonEncode(history));
   }
 
@@ -133,7 +168,6 @@ class LocalStorageService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_historyKey);
   }
-
 
   /// Parse solution blocks from JSON
   List<SolutionBlock> parseSolutionBlocks(List<dynamic> solutionJson) {

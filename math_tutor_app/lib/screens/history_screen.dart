@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 import '../constants/colors.dart';
 import '../services/local_storage_service.dart';
 import '../services/supabase_service.dart';
-import '../services/openai_service.dart';
 import 'solution_detail_screen.dart';
 
 class HistoryScreen extends StatefulWidget {
@@ -33,12 +32,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
     try {
       List<Map<String, dynamic>> history = [];
-      
+
       // Try to load from Supabase if logged in
       if (_supabaseService.isLoggedIn) {
         try {
           final supabaseHistory = await _supabaseService.getProblemHistory();
-          
+
           // Convert Supabase format to local format
           history = supabaseHistory.map((problem) {
             return {
@@ -56,12 +55,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
           // Fall back to local storage
         }
       }
-      
+
       // If Supabase didn't work or user not logged in, use local storage
       if (history.isEmpty) {
         history = await _localStorage.getLocalHistory();
       }
-      
+
       setState(() {
         _allHistory = history;
         _isLoading = false;
@@ -84,18 +83,19 @@ class _HistoryScreenState extends State<HistoryScreen> {
     for (final problem in _allHistory) {
       final solvedAt = DateTime.parse(problem['solvedAt'] as String);
       final solvedDate = DateTime(solvedAt.year, solvedAt.month, solvedAt.day);
-      
+
       String groupKey;
       if (solvedDate == today) {
         groupKey = 'Today';
       } else if (solvedDate == yesterday) {
         groupKey = 'Yesterday';
-      } else if (solvedDate.isAfter(thisWeekStart) || solvedDate == thisWeekStart) {
+      } else if (solvedDate.isAfter(thisWeekStart) ||
+          solvedDate == thisWeekStart) {
         groupKey = 'This Week';
       } else {
         groupKey = DateFormat('MMMM d, y').format(solvedDate);
       }
-      
+
       if (!grouped.containsKey(groupKey)) {
         grouped[groupKey] = [];
       }
@@ -124,10 +124,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           elevation: 0,
           title: const Text(
             'History',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
+            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
           ),
         ),
         body: Center(
@@ -175,10 +172,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         elevation: 0,
         title: const Text(
           'History',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
         actions: [
           PopupMenuButton<String>(
@@ -196,7 +190,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   children: [
                     Icon(Icons.delete_outline, color: Colors.red),
                     SizedBox(width: 8),
-                    Text('Clear All History', style: TextStyle(color: Colors.red)),
+                    Text(
+                      'Clear All History',
+                      style: TextStyle(color: Colors.red),
+                    ),
                   ],
                 ),
               ),
@@ -234,7 +231,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     ),
                   ),
                 ),
-                
+
                 // Problems for this date
                 ...problems.map((problem) => _buildProblemCard(problem)),
               ],
@@ -250,11 +247,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final timeStr = DateFormat('h:mm a').format(solvedAt);
     final imagePath = problem['imagePath'] as String;
     final skillCategory = problem['skillCategory'] as String?;
-    
+
     // Parse solution to get first equation or text
     final solutionJson = problem['solution'] as List<dynamic>;
     final solution = _localStorage.parseSolutionBlocks(solutionJson);
-    
+
     // Find first meaningful content
     String preview = 'Tap to view solution';
     for (final block in solution) {
@@ -274,8 +271,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
 
     return GestureDetector(
-      onTap: () {
-        Navigator.push(
+      onTap: () async {
+        final wasDeleted = await Navigator.push<bool>(
           context,
           MaterialPageRoute(
             builder: (context) => SolutionDetailScreen(
@@ -286,16 +283,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ),
           ),
         );
+
+        if (wasDeleted == true && mounted) {
+          await _loadHistory();
+        }
       },
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
           color: AppColors.cardBackground,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: Colors.transparent,
-            width: 2,
-          ),
+          border: Border.all(color: Colors.transparent, width: 2),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.2),
@@ -315,14 +313,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
               child: Container(
                 width: 90,
                 height: 90,
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.3),
-                ),
+                decoration: BoxDecoration(color: Colors.black.withOpacity(0.3)),
                 child: File(imagePath).existsSync()
-                    ? Image.file(
-                        File(imagePath),
-                        fit: BoxFit.cover,
-                      )
+                    ? Image.file(File(imagePath), fit: BoxFit.cover)
                     : Icon(
                         Icons.image_not_supported,
                         color: Colors.white.withOpacity(0.3),
@@ -330,7 +323,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       ),
               ),
             ),
-            
+
             // Problem details
             Expanded(
               child: Padding(
@@ -359,7 +352,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           ),
                         ),
                       ),
-                    
+
                     // Preview text
                     Text(
                       preview,
@@ -371,9 +364,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    
+
                     const SizedBox(height: 8),
-                    
+
                     // Time
                     Row(
                       children: [
@@ -396,7 +389,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 ),
               ),
             ),
-            
+
             // Arrow icon
             Padding(
               padding: const EdgeInsets.all(16),
@@ -417,15 +410,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.cardBackground,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text(
           'Clear All History?',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         content: const Text(
           'This will delete all your saved problems. This action cannot be undone.',
@@ -436,9 +424,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             onPressed: () => Navigator.pop(context),
             child: Text(
               'Cancel',
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.7),
-              ),
+              style: TextStyle(color: Colors.white.withOpacity(0.7)),
             ),
           ),
           TextButton(
@@ -457,10 +443,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             },
             child: const Text(
               'Clear',
-              style: TextStyle(
-                color: Colors.red,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
             ),
           ),
         ],

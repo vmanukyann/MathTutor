@@ -5,6 +5,7 @@ import 'package:flutter_math_fork/flutter_math.dart';
 import '../constants/colors.dart';
 import '../services/openai_service.dart';
 import '../services/local_storage_service.dart';
+import '../services/supabase_service.dart';
 import 'package:audioplayers/audioplayers.dart';
 
 /// Screen that displays a saved problem from history
@@ -29,6 +30,7 @@ class SolutionDetailScreen extends StatefulWidget {
 
 class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
   final _localStorage = LocalStorageService();
+  final _supabaseService = SupabaseService();
   final _openAIService = OpenAIService();
 
   // Audio playback
@@ -185,11 +187,45 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
     );
 
     if (confirmed == true) {
-      await _localStorage.deleteProblemLocally(widget.problemId);
-      if (mounted) {
-        Navigator.pop(context);
+      try {
+        await _audioPlayer.stop();
+
+        if (_supabaseService.isLoggedIn) {
+          await _supabaseService.deleteProblem(widget.problemId);
+        }
+
+        await _localStorage.deleteProblemLocally(widget.problemId);
+        await _deleteLocalFileIfExists(widget.imagePath);
+        if (_audioPath != null) {
+          await _deleteLocalFileIfExists(_audioPath!);
+        }
+
+        if (mounted) {
+          Navigator.pop(context, true);
+        }
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete this problem: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
+  }
+
+  Future<void> _deleteLocalFileIfExists(String path) async {
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return;
+    }
+
+    try {
+      final file = File(path);
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {}
   }
 
   List<Map<String, dynamic>> _groupIntoSteps() {

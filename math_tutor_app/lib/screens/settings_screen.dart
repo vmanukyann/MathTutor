@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import '../constants/colors.dart';
 import '../services/supabase_service.dart';
 import '../services/local_storage_service.dart';
@@ -8,7 +10,7 @@ import 'package:camera/camera.dart';
 
 class SettingsScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
-  
+
   const SettingsScreen({Key? key, required this.cameras}) : super(key: key);
 
   @override
@@ -18,13 +20,14 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final _supabaseService = SupabaseService();
   final _localStorage = LocalStorageService();
-  
+  final _imagePicker = ImagePicker();
+
   String _userName = '';
   String _userEmail = '';
   bool _isLoading = true;
   bool _isEditingProfile = false;
   String? _profileImagePath; // Local profile image path
-  
+
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
 
@@ -44,11 +47,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadUserProfile() async {
     try {
       final profile = await _supabaseService.getUserProfile();
-      
-      // Load profile image from local storage if exists
-      final prefs = await _localStorage.getUserData();
-      final savedImagePath = prefs?['profile_image_path'] as String?;
-      
+      final savedImagePath = await _localStorage.getProfileImagePath();
+
       setState(() {
         _userName = profile?['full_name'] ?? 'Student';
         _userEmail = profile?['email'] ?? '';
@@ -66,24 +66,101 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _changeProfilePicture() async {
-    // Show a message that this feature requires the image_picker package
-    showDialog(
+    showModalBottomSheet<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.cardBackground,
-        title: const Text('Profile Picture', style: TextStyle(color: AppColors.textWhite)),
-        content: const Text(
-          'Failed to upload media',
-          style: TextStyle(color: AppColors.textGrey, fontSize: 13),
+      backgroundColor: AppColors.cardBackground,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: AppColors.primary),
+              title: const Text(
+                'Take Photo',
+                style: TextStyle(color: AppColors.textWhite),
+              ),
+              onTap: () async {
+                Navigator.pop(context);
+                await _pickAndSaveProfileImage(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(
+                Icons.photo_library,
+                color: AppColors.primary,
+              ),
+              title: const Text(
+                'Choose from Library',
+                style: TextStyle(color: AppColors.textWhite),
+              ),
+              onTap: () async {
+                Navigator.pop(context);
+                await _pickAndSaveProfileImage(ImageSource.gallery);
+              },
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK', style: TextStyle(color: AppColors.primary)),
-          ),
-        ],
       ),
     );
+  }
+
+  Future<void> _pickAndSaveProfileImage(ImageSource source) async {
+    try {
+      final picked = await _imagePicker.pickImage(
+        source: source,
+        maxWidth: 1200,
+        imageQuality: 85,
+      );
+      if (picked == null) return;
+
+      final docsDir = await getApplicationDocumentsDirectory();
+      final profileDir = Directory('${docsDir.path}/mathtutor_profile');
+      if (!await profileDir.exists()) {
+        await profileDir.create(recursive: true);
+      }
+
+      final extension = picked.path.contains('.')
+          ? picked.path.split('.').last
+          : 'jpg';
+      final savedPath =
+          '${profileDir.path}/profile_${DateTime.now().millisecondsSinceEpoch}.$extension';
+
+      await File(picked.path).copy(savedPath);
+
+      final oldPath = _profileImagePath;
+      if (oldPath != null &&
+          oldPath != savedPath &&
+          await File(oldPath).exists()) {
+        try {
+          await File(oldPath).delete();
+        } catch (_) {}
+      }
+
+      await _localStorage.setProfileImagePath(savedPath);
+
+      if (!mounted) return;
+      setState(() {
+        _profileImagePath = savedPath;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Profile picture updated'),
+          backgroundColor: AppColors.primary,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to update profile picture: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _saveProfile() async {
@@ -92,12 +169,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await _supabaseService.updateProfile(
         fullName: _nameController.text.trim(),
       );
-      
+
       setState(() {
         _userName = _nameController.text.trim();
         _isEditingProfile = false;
       });
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -128,11 +205,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
     }
 
+    final hasProfileImage =
+        _profileImagePath != null && File(_profileImagePath!).existsSync();
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text('Profile', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Profile',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         actions: [
           if (_isEditingProfile)
             TextButton(
@@ -143,7 +226,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _emailController.text = _userEmail;
                 });
               },
-              child: const Text('Cancel', style: TextStyle(color: AppColors.textGrey)),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: AppColors.textGrey),
+              ),
             ),
         ],
       ),
@@ -172,25 +258,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       decoration: BoxDecoration(
                         color: AppColors.primary.withOpacity(0.2),
                         shape: BoxShape.circle,
-                        image: _profileImagePath != null && File(_profileImagePath!).existsSync()
+                        image: hasProfileImage
                             ? DecorationImage(
                                 image: FileImage(File(_profileImagePath!)),
                                 fit: BoxFit.cover,
                               )
                             : null,
                       ),
-                      child: _profileImagePath == null
-                          ? Center(
+                      child: hasProfileImage
+                          ? null
+                          : Center(
                               child: Text(
-                                _userName.isNotEmpty ? _userName[0].toUpperCase() : 'S',
+                                _userName.isNotEmpty
+                                    ? _userName[0].toUpperCase()
+                                    : 'S',
                                 style: const TextStyle(
                                   fontSize: 40,
                                   fontWeight: FontWeight.bold,
                                   color: AppColors.primary,
                                 ),
                               ),
-                            )
-                          : null,
+                            ),
                     ),
                     Positioned(
                       bottom: 0,
@@ -202,7 +290,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           decoration: BoxDecoration(
                             color: AppColors.primary,
                             shape: BoxShape.circle,
-                            border: Border.all(color: AppColors.cardBackground, width: 2),
+                            border: Border.all(
+                              color: AppColors.cardBackground,
+                              width: 2,
+                            ),
                           ),
                           child: const Icon(
                             Icons.camera_alt,
@@ -214,9 +305,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ],
                 ),
-                
+
                 const SizedBox(height: 20),
-                
+
                 // Name field (editable)
                 if (_isEditingProfile)
                   TextFormField(
@@ -225,7 +316,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     textAlign: TextAlign.center,
                     decoration: InputDecoration(
                       labelText: 'Full Name',
-                      labelStyle: TextStyle(color: AppColors.textGrey.withOpacity(0.7)),
+                      labelStyle: TextStyle(
+                        color: AppColors.textGrey.withOpacity(0.7),
+                      ),
                       filled: true,
                       fillColor: AppColors.background,
                       border: OutlineInputBorder(
@@ -234,7 +327,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                        borderSide: const BorderSide(
+                          color: AppColors.primary,
+                          width: 2,
+                        ),
                       ),
                     ),
                   )
@@ -248,9 +344,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     textAlign: TextAlign.center,
                   ),
-                
+
                 const SizedBox(height: 8),
-                
+
                 // Email (read-only display)
                 Text(
                   _userEmail,
@@ -260,9 +356,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   textAlign: TextAlign.center,
                 ),
-                
+
                 const SizedBox(height: 20),
-                
+
                 // Edit/Save button
                 if (_isEditingProfile)
                   SizedBox(
@@ -292,7 +388,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _isEditingProfile = true;
                       });
                     },
-                    icon: const Icon(Icons.edit, size: 18, color: AppColors.primary),
+                    icon: const Icon(
+                      Icons.edit,
+                      size: 18,
+                      color: AppColors.primary,
+                    ),
                     label: const Text(
                       'Edit Profile',
                       style: TextStyle(color: AppColors.primary),
@@ -307,9 +407,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
-          
+
           const SizedBox(height: 32),
-          
+
           // Menu Items
           _buildMenuTile(
             icon: Icons.person_outline,
@@ -321,7 +421,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               });
             },
           ),
-          
+
           _buildMenuTile(
             icon: Icons.help_outline,
             title: 'FAQ',
@@ -330,7 +430,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _showFAQDialog();
             },
           ),
-          
+
           _buildMenuTile(
             icon: Icons.feedback_outlined,
             title: 'Send Feedback',
@@ -339,7 +439,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _showFeedbackDialog();
             },
           ),
-          
+
           _buildMenuTile(
             icon: Icons.privacy_tip_outlined,
             title: 'Privacy Policy',
@@ -348,7 +448,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _showPrivacyPolicy();
             },
           ),
-          
+
           _buildMenuTile(
             icon: Icons.description_outlined,
             title: 'Terms of Service',
@@ -357,16 +457,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _showTermsOfService();
             },
           ),
-          
+
           _buildMenuTile(
             icon: Icons.info_outline,
             title: 'Version',
             subtitle: '1.0.0',
             onTap: null,
           ),
-          
+
           const SizedBox(height: 32),
-          
+
           // Logout button
           Center(
             child: TextButton.icon(
@@ -411,8 +511,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             fontSize: 13,
           ),
         ),
-        trailing: onTap != null 
-            ? const Icon(Icons.arrow_forward_ios, size: 16, color: AppColors.textGrey)
+        trailing: onTap != null
+            ? const Icon(
+                Icons.arrow_forward_ios,
+                size: 16,
+                color: AppColors.textGrey,
+              )
             : null,
         onTap: onTap,
       ),
@@ -455,7 +559,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close', style: TextStyle(color: AppColors.primary)),
+            child: const Text(
+              'Close',
+              style: TextStyle(color: AppColors.primary),
+            ),
           ),
         ],
       ),
@@ -488,12 +595,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _showFeedbackDialog() {
     final feedbackController = TextEditingController();
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.cardBackground,
-        title: const Text('Send Feedback', style: TextStyle(color: AppColors.textWhite)),
+        title: const Text(
+          'Send Feedback',
+          style: TextStyle(color: AppColors.textWhite),
+        ),
         content: TextField(
           controller: feedbackController,
           maxLines: 5,
@@ -512,7 +622,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.textGrey)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.textGrey),
+            ),
           ),
           TextButton(
             onPressed: () {
@@ -525,7 +638,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               );
             },
-            child: const Text('Send', style: TextStyle(color: AppColors.primary)),
+            child: const Text(
+              'Send',
+              style: TextStyle(color: AppColors.primary),
+            ),
           ),
         ],
       ),
@@ -537,7 +653,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.cardBackground,
-        title: const Text('Privacy Policy', style: TextStyle(color: AppColors.textWhite)),
+        title: const Text(
+          'Privacy Policy',
+          style: TextStyle(color: AppColors.textWhite),
+        ),
         content: SingleChildScrollView(
           child: Text(
             'MathTutor Privacy Policy\n\n'
@@ -553,13 +672,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             '5. Your Rights\n'
             'You can request to view, edit, or delete your data at any time.\n\n'
             'For questions, contact: privacy@mathtutor.com',
-            style: TextStyle(color: AppColors.textGrey.withOpacity(0.9), fontSize: 13),
+            style: TextStyle(
+              color: AppColors.textGrey.withOpacity(0.9),
+              fontSize: 13,
+            ),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close', style: TextStyle(color: AppColors.primary)),
+            child: const Text(
+              'Close',
+              style: TextStyle(color: AppColors.primary),
+            ),
           ),
         ],
       ),
@@ -571,7 +696,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.cardBackground,
-        title: const Text('Terms of Service', style: TextStyle(color: AppColors.textWhite)),
+        title: const Text(
+          'Terms of Service',
+          style: TextStyle(color: AppColors.textWhite),
+        ),
         content: SingleChildScrollView(
           child: Text(
             'MathTutor Terms of Service\n\n'
@@ -589,13 +717,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             '6. Changes to Terms\n'
             'We may update these terms. Continued use means you accept the changes.\n\n'
             'For questions, contact: support@mathtutor.com',
-            style: TextStyle(color: AppColors.textGrey.withOpacity(0.9), fontSize: 13),
+            style: TextStyle(
+              color: AppColors.textGrey.withOpacity(0.9),
+              fontSize: 13,
+            ),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close', style: TextStyle(color: AppColors.primary)),
+            child: const Text(
+              'Close',
+              style: TextStyle(color: AppColors.primary),
+            ),
           ),
         ],
       ),
@@ -607,7 +741,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.cardBackground,
-        title: const Text('Sign Out?', style: TextStyle(color: AppColors.textWhite)),
+        title: const Text(
+          'Sign Out?',
+          style: TextStyle(color: AppColors.textWhite),
+        ),
         content: const Text(
           'Are you sure you want to sign out?',
           style: TextStyle(color: AppColors.textGrey),
@@ -615,7 +752,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.textGrey)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.textGrey),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
@@ -628,10 +768,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (confirmed == true) {
       // Sign out from Supabase
       await _supabaseService.signOut();
-      
+
       // Clear local user data (but keep history)
       await _localStorage.clearUserData();
-      
+
       if (mounted) {
         // Navigate back to login screen
         Navigator.of(context).pushAndRemoveUntil(

@@ -295,7 +295,14 @@ class SupabaseService {
   Future<void> deleteProblem(String problemId) async {
     if (currentUser == null) throw Exception('No user logged in');
 
-    await client.from('problem_history').delete().eq('id', problemId);
+    final parsedId = int.tryParse(problemId);
+    final idValue = parsedId ?? problemId;
+
+    await client
+        .from('problem_history')
+        .delete()
+        .eq('user_id', currentUser!.id)
+        .eq('id', idValue);
   }
 
   /// Delete all history

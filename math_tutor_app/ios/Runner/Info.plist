@@ -45,5 +45,11 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>MathTutor needs camera access so you can take a profile picture.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>MathTutor needs photo library access so you can choose a profile picture.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>MathTutor saves selected profile pictures for your account display.</string>
 </dict>
 </plist>

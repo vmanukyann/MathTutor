@@ -400,7 +400,7 @@ class OpenAIService {
     return trimmed;
   }
 
-  /// Heuristic fallback if model omits skill fields.
+  // Heuristic fallback if model omits skill fields.
   Map<String, String> _inferSkill(List<SolutionBlock> solution) {
     final text = solution.map((block) => block.text.toLowerCase()).join(' ');
 
