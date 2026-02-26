@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../constants/supabase.dart';
 import 'openai_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Service class for interacting with Supabase backend
 class SupabaseService {

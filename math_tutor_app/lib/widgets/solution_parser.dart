@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_math_fork/flutter_math.dart';
 import '../services/openai_service.dart';
+import 'math_expression_view.dart';
 
 /// Utility class for parsing and rendering solution blocks
 /// Takes the structured blocks from OpenAI and converts them into Flutter widgets
@@ -38,13 +38,9 @@ class SolutionParser {
               ),
             ),
             child: Center(
-              child: Math.tex(
-                _cleanLatex(block.text),
-                textStyle: const TextStyle(
-                  fontSize: 20,
-                  color: Colors.white,
-                ),
-                mathStyle: MathStyle.display,
+              child: MathExpressionView(
+                expression: block.text,
+                textStyle: const TextStyle(fontSize: 20, color: Colors.white),
               ),
             ),
           ),
@@ -60,10 +56,7 @@ class SolutionParser {
             decoration: BoxDecoration(
               color: Colors.blue.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: Colors.blue.withOpacity(0.3),
-                width: 1,
-              ),
+              border: Border.all(color: Colors.blue.withOpacity(0.3), width: 1),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -105,28 +98,5 @@ class SolutionParser {
           ),
         );
     }
-  }
-
-  /// Cleans up LaTeX strings before rendering
-  /// Removes unnecessary wrappers and converts text operators to proper LaTeX symbols
-  static String _cleanLatex(String latex) {
-    // Remove any whitespace first
-    String cleaned = latex.trim();
-    
-    // Sometimes the AI wraps equations in $ or $$ - we don't need that
-    // since flutter_math_fork handles it automatically
-    if (cleaned.startsWith(r'$$') && cleaned.endsWith(r'$$')) {
-      cleaned = cleaned.substring(2, cleaned.length - 2);
-    } else if (cleaned.startsWith(r'$') && cleaned.endsWith(r'$')) {
-      cleaned = cleaned.substring(1, cleaned.length - 1);
-    }
-    
-    // Convert text-based operators to proper LaTeX commands
-    // This helps if the AI accidentally uses text instead of LaTeX symbols
-    cleaned = cleaned.replaceAll('<=', r'\leq');
-    cleaned = cleaned.replaceAll('>=', r'\geq');
-    cleaned = cleaned.replaceAll('!=', r'\neq');
-    
-    return cleaned.trim();
   }
 }

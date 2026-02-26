@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
-import 'package:flutter_math_fork/flutter_math.dart';
 import '../constants/colors.dart';
 import '../services/openai_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/supabase_service.dart';
 import 'package:audioplayers/audioplayers.dart';
+import '../widgets/math_expression_view.dart';
 
 /// Screen that displays a saved problem from history
 /// Shows the original image and the solution
@@ -96,10 +96,9 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
         // Audio already exists, just play it
         await _audioPlayer.play(DeviceFileSource(_audioPath!));
       } else {
-        // Generate new audio
-        final tempAudioPath = await _openAIService.generateAudioExplanation(
-          widget.solution,
-        );
+        // Generate new audio (and analysis, but we only need audio here)
+        final result = await _openAIService.tutor(widget.imagePath);
+        final tempAudioPath = result.audioPath;
 
         // Persist to history directory
         final docsDir = await getApplicationDocumentsDirectory();
@@ -107,6 +106,7 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
         if (!await historyDir.exists()) {
           await historyDir.create(recursive: true);
         }
+
         final savedAudioPath =
             '${historyDir.path}/audio_${widget.problemId}.mp3';
         await File(tempAudioPath).copy(savedAudioPath);
@@ -137,9 +137,11 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
         );
       }
     } finally {
-      setState(() {
-        _isGeneratingAudio = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isGeneratingAudio = false;
+        });
+      }
     }
   }
 
@@ -517,8 +519,8 @@ class _SolutionDetailScreenState extends State<SolutionDetailScreen> {
             border: Border.all(color: AppColors.primary.withOpacity(0.3)),
           ),
           child: Center(
-            child: Math.tex(
-              block.text,
+            child: MathExpressionView(
+              expression: block.text,
               textStyle: const TextStyle(color: Colors.white, fontSize: 20),
             ),
           ),

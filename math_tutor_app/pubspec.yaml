@@ -13,7 +13,7 @@ dependencies:
   
   # Existing dependencies
   camera: ^0.10.5+5
-  http: ^1.1.2
+  http: ^1.2.2
   path_provider: ^2.1.1
   flutter_math_fork: ^0.7.2
   audioplayers: ^5.2.1

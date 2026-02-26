@@ -651,10 +651,8 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 20),
           ...List.generate(_topSkills.length, (index) {
             final skill = _topSkills[index];
-            final rawPercentage = skill['percentage'];
-            final percentage = (rawPercentage is num)
-                ? rawPercentage.round()
-                : 0;
+            final pct = (skill['percentage'] as num?)?.toDouble() ?? 0.0;
+            final pctLabel = pct.round();
 
             final skillName = _specificSkillLabel(skill, index);
 
@@ -675,7 +673,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       Text(
-                        '$percentage%',
+                        '$pctLabel%',
                         style: const TextStyle(
                           color: AppColors.primary,
                           fontSize: 16,
@@ -688,7 +686,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: LinearProgressIndicator(
-                      value: percentage / 100,
+                      value: (pct / 100.0).clamp(0.0, 1.0),
                       backgroundColor: Colors.white.withOpacity(0.1),
                       valueColor: const AlwaysStoppedAnimation<Color>(
                         AppColors.primary,

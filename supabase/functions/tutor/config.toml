@@ -1,0 +1,7 @@
+verify_jwt = false
+
+[functions.tutor]
+enabled = true
+verify_jwt = false
+import_map = "./functions/tutor/deno.json"
+entrypoint = "./functions/tutor/index.ts"
