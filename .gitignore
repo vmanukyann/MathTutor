@@ -1,0 +1,4 @@
+.env
+.build/
+MathTutorSwift/.build/
+supabase/.temp/
