@@ -1,5 +1,5 @@
 import Foundation
-import MathTutorCore
+import Combine
 import SwiftUI
 
 @MainActor
@@ -25,7 +25,7 @@ final class AppModel: ObservableObject {
             in: .userDomainMask
         ).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
         store = FileStudentMemoryStore(
-            directory: documents.appendingPathComponent("MathTutorTeacher")
+            directory: documents.appendingPathComponent("MathTutor")
         )
         load()
     }

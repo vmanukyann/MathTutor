@@ -1,5 +1,4 @@
 import Foundation
-import MathTutorCore
 
 enum AppSecrets {
     static let supabase = SupabaseConfiguration(

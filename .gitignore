@@ -2,3 +2,6 @@
 .build/
 MathTutorSwift/.build/
 supabase/.temp/
+*.xcuserstate
+xcuserdata/
+DerivedData/

@@ -1,4 +1,6 @@
-import AVFoundation
+@preconcurrency import AVFoundation
+import Combine
+import ObjectiveC
 import UIKit
 
 @MainActor
@@ -23,8 +25,9 @@ final class CameraObservationService: NSObject, ObservableObject {
 
     func stop() {
         guard session.isRunning else { return }
+        let session = session
         DispatchQueue.global(qos: .userInitiated).async {
-            self.session.stopRunning()
+            session.stopRunning()
             Task { @MainActor in self.isRunning = false }
         }
     }
@@ -75,8 +78,9 @@ final class CameraObservationService: NSObject, ObservableObject {
 
         session.commitConfiguration()
 
+        let session = session
         DispatchQueue.global(qos: .userInitiated).async {
-            self.session.startRunning()
+            session.startRunning()
             Task { @MainActor in self.isRunning = true }
         }
     }

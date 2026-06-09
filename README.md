@@ -10,6 +10,8 @@ MathTutor is an iPad-first research prototype for a real-time Socratic math teac
 
 The core idea: **make the tutor behave less like a calculator and more like a patient teacher sitting beside the student.**
 
+![MathTutor iPad student picker](docs/media/student-picker.png)
+
 ## Product Vision
 
 | Old solver apps | MathTutor JuneVersion |
@@ -84,7 +86,10 @@ flowchart TB
 │   ├── Sources/
 │   │   ├── MathTutorCore/          # Student memory, policy, models, Supabase client
 │   │   └── MathTutorCoreChecks/    # Lightweight verification executable
-│   └── iPadApp/MathTutorTeacher/   # SwiftUI iPad app source
+│   └── iPadApp/MathTutor/          # Native Xcode iPad app project
+│       └── MathTutor/
+│           ├── Core/               # App-local copy of the core model/API layer
+│           └── TeacherUI/          # SwiftUI app screens and design system
 ├── supabase/
 │   ├── functions/tutor/            # OpenAI-backed Edge Function
 │   ├── migrations/                 # Fresh JuneVersion schema
@@ -247,22 +252,43 @@ Expected output:
 MathTutorCoreChecks passed
 ```
 
+## Interface Direction
+
+The JuneVersion UI follows Apple's current Liquid Glass and iPadOS guidance:
+
+- Use standard SwiftUI navigation, sheets, toolbars, and controls so the newest SDK can apply system behavior automatically.
+- Use SwiftUI `glassEffect` on iPadOS 26+ for floating controls and status elements, with standard system material fallback on older iPadOS versions.
+- Keep Liquid Glass in the functional layer: navigation, controls, status pills, and the live hint dock.
+- Keep dashboards, consent details, reflection notes, and admin analytics on calm content surfaces using system materials.
+- Keep learning content clear and quiet. The live camera view stays primary; controls float above it only where needed.
+- Avoid dense solver-style chat UI. Hints are short, teacher-like, and easy to ignore until useful.
+- Use system typography, SF Symbols, semantic colors, and dynamic type-friendly layouts.
+
+Design references:
+
+- [Adopting Liquid Glass](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass)
+- [Liquid Glass materials](https://developer.apple.com/design/human-interface-guidelines/materials)
+- [SwiftUI `glassEffect`](https://developer.apple.com/documentation/swiftui/view/glasseffect%28_%3Ain%3A%29)
+- [iPad split views](https://developer.apple.com/design/human-interface-guidelines/split-views)
+
 ## Xcode Setup
 
-Full Xcode was not available in the Codex environment, so the native `.xcodeproj` was not generated here.
+The native Xcode project lives at:
+
+```text
+MathTutorSwift/iPadApp/MathTutor/MathTutor.xcodeproj
+```
 
 To run the iPad app:
 
-1. Create a new Xcode iPad App target named `MathTutorTeacher`.
-2. Add the Swift files from `MathTutorSwift/iPadApp/MathTutorTeacher`.
-3. Add the local Swift package at `MathTutorSwift`.
-4. Link the `MathTutorCore` product to the app target.
-5. Add camera permission text to `Info.plist`:
+1. Open `MathTutorSwift/iPadApp/MathTutor/MathTutor.xcodeproj`.
+2. Wait for Xcode's iOS platform download to finish if it is still installing.
+3. Connect the iPad and trust the Mac.
+4. Select the iPad in Xcode's run destination menu.
+5. Choose a signing team if Xcode asks.
+6. Press Run.
 
-```xml
-<key>NSCameraUsageDescription</key>
-<string>MathTutor uses the camera to observe handwritten math work during tutoring sessions.</string>
-```
+The project is configured as iPad-only, includes camera permission text, and launches the custom MathTutor SwiftUI flow instead of the default template view.
 
 ## Research Value
 
@@ -286,5 +312,6 @@ MathTutor is designed to produce study-ready signals:
 | Camera preview/capture | Implemented |
 | Supabase observation function | Implemented |
 | Supabase session logging | Implemented |
-| Native Xcode project | Pending Xcode setup |
+| Native Xcode project | Builds for iPadOS |
+| Liquid Glass-inspired UI refresh | Implemented and simulator-rendered |
 | Real iPad testing | Pending device run |
