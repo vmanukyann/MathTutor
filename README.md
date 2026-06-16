@@ -254,22 +254,87 @@ MathTutorCoreChecks passed
 
 ## Interface Direction
 
-The JuneVersion UI follows Apple's current Liquid Glass and iPadOS guidance:
+The JuneVersion UI uses a flat STEM notebook language built for tutoring on paper:
 
-- Use standard SwiftUI navigation, sheets, toolbars, and controls so the newest SDK can apply system behavior automatically.
-- Use SwiftUI `glassEffect` on iPadOS 26+ for floating controls and status elements, with standard system material fallback on older iPadOS versions.
-- Keep Liquid Glass in the functional layer: navigation, controls, status pills, and the live hint dock.
-- Keep dashboards, consent details, reflection notes, and admin analytics on calm content surfaces using system materials.
-- Keep learning content clear and quiet. The live camera view stays primary; controls float above it only where needed.
-- Avoid dense solver-style chat UI. Hints are short, teacher-like, and easy to ignore until useful.
-- Use system typography, SF Symbols, semantic colors, and dynamic type-friendly layouts.
+- Use a subtle notebook/grid background with lab green, chalkboard green, graphite, cream paper, muted yellow, and rust accents.
+- Keep student-facing screens flat: no gradients, no glass effects, no decorative animation, and no dashboard panels.
+- Make the camera the dominant Live Session surface with only a compact icon strip over the page.
+- Keep visible controls icon-only where possible, with accessibility labels preserved in code.
+- Show Teach Mode as math only. No prose paragraphs appear on the teaching surface.
+- Let the student interrupt from Teach Mode with a question icon, then return to paper work with icon controls.
+- Keep Admin Review detailed enough for research, but style it like a sparse notebook instead of a business dashboard.
 
-Design references:
+The shared SwiftUI style lives in:
 
-- [Adopting Liquid Glass](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass)
-- [Liquid Glass materials](https://developer.apple.com/design/human-interface-guidelines/materials)
-- [SwiftUI `glassEffect`](https://developer.apple.com/documentation/swiftui/view/glasseffect%28_%3Ain%3A%29)
-- [iPad split views](https://developer.apple.com/design/human-interface-guidelines/split-views)
+```text
+MathTutorSwift/iPadApp/MathTutor/MathTutor/TeacherUI/MTDesignSystem.swift
+```
+
+## Motorized Holder Prototype
+
+MathTutor includes an app-side prototype for a future motorized iPad tutor holder. The holder concept has two modes:
+
+| Mode | Physical Position | App Behavior |
+| --- | --- | --- |
+| Observe Mode | Rear camera faces the student's paper | Camera-first UI watches quietly and gives short hints |
+| Teach Mode | Screen faces the student | The app shows centered math steps only, then returns to paper work |
+
+The current implementation does not require hardware. The shared `StandController` chooses a simulated controller when no stand URL is configured, so the tutor flow can be tested in Xcode, Simulator, and on an iPad before any motors exist.
+
+Holder controls live in:
+
+```text
+MathTutorSwift/iPadApp/MathTutor/MathTutor/TeacherUI/StandControl/
+```
+
+The Admin screen has a Holder test sheet with:
+
+- current holder mode,
+- last command,
+- simulated or HTTP connection mode,
+- stand base URL field,
+- Observe, Teach, Pitch Down, Pitch Up, Center, and Emergency Stop buttons.
+
+The Live Tutor session stays safe by default:
+
+1. The app starts in Observe Mode.
+2. A possible mistake gets a quiet hint without rotating.
+3. The student taps the Teach icon to explicitly enter Teach Mode.
+4. MathTutor sends `teachMode`, shows centered math steps, and pauses observation.
+5. Checkmark or return icons send the holder back to Observe Mode.
+6. A cooldown prevents repeated Teach Mode triggers.
+
+### Simulated Mode
+
+Leave the stand URL blank to use simulated mode. The simulated controller logs commands and pretends to rotate over a short delay. This is the correct mode for app development, UI demos, and simulator testing.
+
+### Future ESP32 HTTP Mode
+
+When hardware exists, enter a local base URL such as:
+
+```text
+http://math-tutor-stand.local
+```
+
+The HTTP controller is prepared for these local Wi-Fi endpoints:
+
+| Command | Endpoint |
+| --- | --- |
+| Observe Mode / Return to Observe | `POST /observe` |
+| Teach Mode | `POST /teach` |
+| Center | `POST /center` |
+| Pitch Down | `POST /pitch-down` |
+| Pitch Up | `POST /pitch-up` |
+| Emergency Stop | `POST /stop` |
+
+The app includes local-network privacy text for future holder control. If HTTP control fails, MathTutor keeps the tutoring UI usable and shows a non-blocking error.
+
+Safe hardware testing order:
+
+1. Simulated app flow.
+2. ESP32 on the desk with no iPad attached.
+3. One-axis rotating empty cradle.
+4. iPad mounted only after slow motion and stop controls work.
 
 ## Xcode Setup
 
@@ -313,5 +378,6 @@ MathTutor is designed to produce study-ready signals:
 | Supabase observation function | Implemented |
 | Supabase session logging | Implemented |
 | Native Xcode project | Builds for iPadOS |
-| Liquid Glass-inspired UI refresh | Implemented and simulator-rendered |
+| Flat STEM notebook UI | Implemented |
+| Motorized holder software prototype | Simulated + future HTTP interface implemented |
 | Real iPad testing | Pending device run |

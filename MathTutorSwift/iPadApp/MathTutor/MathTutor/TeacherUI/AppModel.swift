@@ -15,6 +15,7 @@ final class AppModel: ObservableObject {
     @Published var route: Route = .studentPicker
     @Published var students: [StudentProfile] = []
     @Published var sessions: [TutoringSession] = []
+    @Published var standController = StandController()
 
     private let store: FileStudentMemoryStore
     private let tutorClient = SupabaseTutorClient(configuration: AppSecrets.supabase)

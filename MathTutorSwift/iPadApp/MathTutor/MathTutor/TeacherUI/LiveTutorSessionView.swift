@@ -7,6 +7,7 @@ struct LiveTutorSessionView: View {
 
     @StateObject private var camera = CameraObservationService()
     @StateObject private var voice = VoiceTutor()
+    @ObservedObject private var standController: StandController
 
     @State private var session: TutoringSession
     @State private var status: SessionStatus = .watching
@@ -14,16 +15,40 @@ struct LiveTutorSessionView: View {
     @State private var latestObservation: TutorObservation?
     @State private var errorMessage: String?
     @State private var studentConfused = false
+    @State private var isTeachMode = false
+    @State private var lastTeachModeRequest = Date.distantPast
+    @State private var teachModeVariant = 0
 
     private let tutorClient = SupabaseTutorClient(configuration: AppSecrets.supabase)
     private let policy = TutorPolicy(noAnswerMode: true)
+    private let teachModeCooldown: TimeInterval = 8
 
-    init(student: StudentProfile) {
+    init(student: StudentProfile, standController: StandController) {
         self.student = student
+        _standController = ObservedObject(wrappedValue: standController)
         _session = State(initialValue: TutoringSession(student: student))
     }
 
     var body: some View {
+        ZStack {
+            if isTeachMode {
+                teachModeView
+            } else {
+                observeModeView
+            }
+        }
+        .task {
+            await camera.start()
+            standController.send(.observeMode)
+        }
+        .onDisappear {
+            camera.stop()
+            voice.stop()
+            standController.returnToObserve()
+        }
+    }
+
+    private var observeModeView: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
@@ -32,239 +57,291 @@ struct LiveTutorSessionView: View {
             } else {
                 CameraPreview(session: camera.session)
                     .ignoresSafeArea()
-                    .overlay {
-                        cameraVignette
-                    }
                     .overlay(alignment: .center) {
                         paperGuide
                     }
-                    .overlay(alignment: .top) {
-                        sessionHeader
+                    .overlay(alignment: .topTrailing) {
+                        endButton
                     }
                     .overlay(alignment: .bottom) {
                         tutorDock
                     }
             }
         }
-        .task {
-            await camera.start()
-        }
-        .onDisappear {
-            camera.stop()
-            voice.stop()
-        }
     }
 
     private var cameraDeniedState: some View {
-        ContentUnavailableView(
-            "Camera Access Needed",
-            systemImage: "camera.fill",
-            description: Text("Allow camera access so MathTutor can observe handwritten work.")
-        )
-        .padding(40)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: MTTheme.cardRadius, style: .continuous))
+        VStack(spacing: 14) {
+            Image(systemName: "camera.fill")
+                .font(.system(size: 46, weight: .semibold))
+            Text("Camera")
+                .font(.title2.weight(.semibold))
+            Text("Allow camera access to observe handwritten work.")
+                .font(.callout)
+                .foregroundStyle(MTTheme.secondaryInk)
+                .multilineTextAlignment(.center)
+        }
+        .foregroundStyle(MTTheme.ink)
+        .padding(28)
+        .background(MTTheme.notebookPaper, in: RoundedRectangle(cornerRadius: MTTheme.cardRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: MTTheme.cardRadius, style: .continuous)
+                .stroke(MTTheme.gridLine, lineWidth: 1)
+        }
         .padding()
     }
 
-    private var cameraVignette: some View {
-        LinearGradient(
-            colors: [
-                .black.opacity(0.38),
-                .black.opacity(0.04),
-                .black.opacity(0.52)
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
-    }
-
-    private var sessionHeader: some View {
-        HStack(spacing: 12) {
-            MTStatusPill(title: student.name, symbol: "person.crop.circle.fill", tint: .white)
-            MTStatusPill(title: statusLabel, symbol: statusIcon, tint: statusTint)
-
-            Spacer()
-
-            Button {
-                endSession()
-            } label: {
-                Label("End", systemImage: "xmark.circle.fill")
-            }
-            .buttonStyle(MTSecondaryButton())
-            .tint(.white)
-        }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 18)
-    }
-
     private var paperGuide: some View {
-        RoundedRectangle(cornerRadius: 26, style: .continuous)
-            .strokeBorder(.white.opacity(0.72), style: StrokeStyle(lineWidth: 3, dash: [16, 12]))
+        Rectangle()
+            .strokeBorder(MTTheme.notebookPaper.opacity(0.78), style: StrokeStyle(lineWidth: 2, dash: [12, 12]))
             .frame(maxWidth: 720, maxHeight: 500)
             .padding(.horizontal, 44)
-            .overlay(alignment: .top) {
-                Label("Paper area", systemImage: "doc.viewfinder")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(.black.opacity(0.42), in: Capsule())
-                    .offset(y: -18)
-            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    private var endButton: some View {
+        Button {
+            endSession()
+        } label: {
+            Image(systemName: "xmark")
+        }
+        .buttonStyle(MTIconButton(tint: MTTheme.errorRust))
+        .accessibilityLabel("End session")
+        .padding(18)
     }
 
     private var tutorDock: some View {
-        VStack(spacing: 12) {
-            if let errorMessage {
-                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
-                    .foregroundStyle(.red)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 10)
-                    .background(.regularMaterial, in: Capsule())
+        VStack(spacing: 8) {
+            if errorMessage != nil || standController.state.lastError != nil || latestObservation != nil || studentConfused {
+                minimalHintNote
             }
 
-            MTFloatingGlass {
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .bottom, spacing: 14) {
-                        hintPanel
-                        tutorControls
+            MTControlStrip {
+                HStack(spacing: 8) {
+                    Button {
+                        Task { await checkWork() }
+                    } label: {
+                        Image(systemName: status == .thinking ? "hourglass" : "viewfinder")
                     }
+                    .buttonStyle(MTIconButton(tint: MTTheme.chalkboardGreen))
+                    .disabled(status == .thinking || status == .paused)
+                    .accessibilityLabel(status == .thinking ? "Checking work" : "Check work")
 
-                    VStack(spacing: 14) {
-                        hintPanel
-                        tutorControls
+                    Button {
+                        togglePause()
+                    } label: {
+                        Image(systemName: status == .paused ? "play.fill" : "pause.fill")
                     }
+                    .buttonStyle(MTIconButton(tint: MTTheme.graphiteInk))
+                    .accessibilityLabel(status == .paused ? "Resume watching" : "Pause watching")
+
+                    Button {
+                        markConfused()
+                    } label: {
+                        Image(systemName: "questionmark")
+                    }
+                    .buttonStyle(MTIconButton(tint: MTTheme.chemicalGold))
+                    .disabled(status == .thinking)
+                    .accessibilityLabel("Ask a question")
+
+                    Button {
+                        requestTeachMode()
+                    } label: {
+                        Image(systemName: "rectangle.inset.filled.and.person.filled")
+                    }
+                    .buttonStyle(MTIconButton(tint: MTTheme.labGreen))
+                    .disabled(status == .thinking || !canRequestTeachMode)
+                    .accessibilityLabel("Enter teach mode")
+
+                    Button {
+                        markSelfCorrected()
+                    } label: {
+                        Image(systemName: "checkmark")
+                    }
+                    .buttonStyle(MTIconButton(tint: latestObservation == nil ? MTTheme.disabledGray : MTTheme.labGreen))
+                    .disabled(latestObservation == nil)
+                    .accessibilityLabel("Mark corrected")
+
+                    Button {
+                        voice.speak(latestHint)
+                    } label: {
+                        Image(systemName: "speaker.wave.2")
+                    }
+                    .buttonStyle(MTIconButton(tint: MTTheme.graphiteInk))
+                    .accessibilityLabel("Repeat hint")
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 18)
+            .padding(.bottom, 16)
         }
+        .padding(.horizontal, 18)
     }
 
-    private var tutorControls: some View {
-        VStack(spacing: 12) {
-            Button {
-                Task { await checkWork() }
-            } label: {
-                Label(status == .thinking ? "Checking" : "Check Work", systemImage: "viewfinder")
-                    .frame(width: 170)
-            }
-            .buttonStyle(MTPrimaryButton())
-            .disabled(status == .thinking || status == .paused)
+    private var minimalHintNote: some View {
+        HStack(spacing: 10) {
+            Image(systemName: hintIcon)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(hintTint)
 
-            Button {
-                togglePause()
-            } label: {
-                Label(status == .paused ? "Resume" : "Pause", systemImage: status == .paused ? "play.circle.fill" : "pause.circle.fill")
-                    .frame(width: 170)
-            }
-            .buttonStyle(MTSecondaryButton())
-
-            Button {
-                markConfused()
-            } label: {
-                Label("Confused", systemImage: "questionmark.bubble.fill")
-                    .frame(width: 170)
-            }
-            .buttonStyle(MTSecondaryButton())
-            .disabled(status == .thinking)
-
-            Button {
-                markSelfCorrected()
-            } label: {
-                Label("I fixed it", systemImage: "checkmark.circle.fill")
-                    .frame(width: 170)
-            }
-            .buttonStyle(MTSecondaryButton())
-            .disabled(latestObservation == nil)
-
-            Button {
-                voice.speak(latestHint)
-            } label: {
-                Label("Repeat", systemImage: "speaker.wave.2.fill")
-                    .frame(width: 170)
-            }
-            .buttonStyle(MTSecondaryButton())
+            Text(visibleHint)
+                .font(.callout.weight(.medium))
+                .foregroundStyle(MTTheme.ink)
+                .lineLimit(2)
+                .minimumScaleFactor(0.78)
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(MTTheme.paleYellowNote.opacity(0.96), in: RoundedRectangle(cornerRadius: MTTheme.compactRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: MTTheme.compactRadius, style: .continuous)
+                .stroke(MTTheme.chemicalGold.opacity(0.55), lineWidth: 1)
+        }
+        .frame(maxWidth: 560)
     }
 
-    private var hintPanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label("Tutor Hint", systemImage: "lightbulb.fill")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.secondary)
+    private var teachModeView: some View {
+        ZStack {
+            MTBackground()
+
+            VStack {
+                Spacer()
+
+                VStack(spacing: 26) {
+                    ForEach(Array(teachModeLines.enumerated()), id: \.offset) { _, line in
+                        Text(line)
+                            .font(.system(size: 68, weight: .semibold, design: .serif))
+                            .foregroundStyle(MTTheme.deepBlackGreen)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.42)
+                            .accessibilityLabel(line)
+                    }
+                }
+                .padding(.horizontal, 34)
+                .frame(maxWidth: 960)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Math steps")
 
                 Spacer()
 
-                if let latestObservation {
-                    Text("Level \(latestObservation.hintLevel)")
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(MTTheme.accent.opacity(0.12), in: Capsule())
+                MTControlStrip {
+                    HStack(spacing: 8) {
+                        Button {
+                            askTeachModeQuestion()
+                        } label: {
+                            Image(systemName: "questionmark")
+                        }
+                        .buttonStyle(MTIconButton(tint: MTTheme.chemicalGold))
+                        .accessibilityLabel("Ask a question")
+
+                        Button {
+                            returnToObserveMode()
+                        } label: {
+                            Image(systemName: "checkmark")
+                        }
+                        .buttonStyle(MTIconButton(tint: MTTheme.labGreen))
+                        .accessibilityLabel("Understood")
+
+                        Button {
+                            returnToObserveMode()
+                        } label: {
+                            Image(systemName: "return")
+                        }
+                        .buttonStyle(MTIconButton(tint: MTTheme.graphiteInk))
+                        .accessibilityLabel("Return to work")
+
+                        if standController.state.currentMode == .teach {
+                            Button {
+                                standController.send(.stop)
+                            } label: {
+                                Image(systemName: "stop.fill")
+                            }
+                            .buttonStyle(MTIconButton(tint: MTTheme.errorRust))
+                            .accessibilityLabel("Emergency stop holder")
+                        }
+                    }
                 }
+                .padding(.bottom, 24)
             }
-
-            Text(latestHint)
-                .font(.title3.weight(.semibold))
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if studentConfused {
-                Label("Student marked this step as confusing", systemImage: "questionmark.bubble.fill")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(MTTheme.warning)
-                    .padding(.top, 2)
-            }
-
-            if let latestObservation {
-                HStack(spacing: 8) {
-                    MTStatusPill(
-                        title: latestObservation.misconceptionType.displayName,
-                        symbol: "brain.head.profile",
-                        tint: MTTheme.warning
-                    )
-                    MTStatusPill(
-                        title: latestObservation.confidence.rawValue.capitalized,
-                        symbol: "gauge.with.dots.needle.bottom.50percent",
-                        tint: MTTheme.accent
-                    )
-                }
-            }
+            .padding(MTTheme.pagePadding)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .mtLiquidGlass(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-    }
-
-    private var statusLabel: String {
-        switch status {
-        case .watching: "Watching"
-        case .thinking: "Thinking"
-        case .hintReady: "Hint ready"
-        case .paused: "Paused"
+        .onAppear {
+            teachModeVariant = 0
         }
     }
 
-    private var statusIcon: String {
-        switch status {
-        case .watching: "eye.fill"
-        case .thinking: "brain.head.profile"
-        case .hintReady: "lightbulb.fill"
-        case .paused: "pause.circle.fill"
+    private var visibleHint: String {
+        if let errorMessage {
+            return errorMessage
+        }
+        if let standError = standController.state.lastError {
+            return standError
+        }
+        return latestHint
+    }
+
+    private var hintIcon: String {
+        if errorMessage != nil || standController.state.lastError != nil {
+            return "exclamationmark.triangle"
+        }
+        if studentConfused {
+            return "questionmark"
+        }
+        return "lightbulb"
+    }
+
+    private var hintTint: Color {
+        if errorMessage != nil || standController.state.lastError != nil {
+            return MTTheme.errorRust
+        }
+        if studentConfused {
+            return MTTheme.chemicalGold
+        }
+        return MTTheme.chalkboardGreen
+    }
+
+    private var canRequestTeachMode: Bool {
+        Date().timeIntervalSince(lastTeachModeRequest) >= teachModeCooldown
+    }
+
+    private var teachModeLines: [String] {
+        if teachModeVariant == 1 {
+            return alternateTeachModeLines
+        }
+
+        switch latestObservation?.misconceptionType {
+        case .signError:
+            return ["-2x + 5 = 11", "-2x = 6", "x = -3"]
+        case .equationBalance:
+            return ["2x + 7 = 15", "2x = 15 - 7", "2x = 8", "x = 4"]
+        case .invalidCancellation:
+            return ["(x + 3) / x", "≠ 1 + 3", "= 1 + 3/x"]
+        case .slopeIntercept:
+            return ["y = mx + b", "y = 2x + 3", "m = 2", "b = 3"]
+        case .factoring:
+            return ["x² + 5x + 6", "= (x + 2)(x + 3)"]
+        case .satStrategy:
+            return ["2x + 6 = 18", "2(x + 3) = 18", "x + 3 = 9"]
+        case .distribution, .unclearWork, .none:
+            return ["3(x + 2)", "= 3x + 3·2", "= 3x + 6"]
         }
     }
 
-    private var statusTint: Color {
-        switch status {
-        case .watching: .white
-        case .thinking: MTTheme.warning
-        case .hintReady: MTTheme.success
-        case .paused: .white
+    private var alternateTeachModeLines: [String] {
+        switch latestObservation?.misconceptionType {
+        case .signError:
+            return ["-2x = 6", "x = 6 / -2", "x = -3"]
+        case .equationBalance:
+            return ["2x + 7 = 15", "-7        -7", "2x = 8"]
+        case .invalidCancellation:
+            return ["(x + 3) / x", "= x/x + 3/x", "= 1 + 3/x"]
+        case .slopeIntercept:
+            return ["y = 2x + 3", "rise / run = 2", "start = 3"]
+        case .factoring:
+            return ["2 · 3 = 6", "2 + 3 = 5", "(x + 2)(x + 3)"]
+        case .satStrategy:
+            return ["2x + 6 = 18", "2x = 12", "x = 6"]
+        case .distribution, .unclearWork, .none:
+            return ["3(x + 2)", "= (3·x) + (3·2)", "= 3x + 6"]
         }
     }
 
@@ -299,7 +376,7 @@ struct LiveTutorSessionView: View {
             }
         } catch {
             errorMessage = error.localizedDescription
-            latestHint = "I could not analyze that frame. Try steadying the iPad and checking again."
+            latestHint = "Try steadying the iPad and checking again."
             status = .watching
         }
     }
@@ -309,17 +386,45 @@ struct LiveTutorSessionView: View {
         last.studentSelfCorrected = true
         session.events.append(last)
         studentConfused = false
-        latestHint = "Nice correction. Keep the fixed line visible so I can follow the next step."
+        latestHint = "Keep the fixed line visible."
         voice.speak(latestHint)
     }
 
     private func markConfused() {
         studentConfused = true
         if let latestObservation {
-            latestHint = "Pause on this step. What changed from the previous line in the \(latestObservation.misconceptionType.displayName.lowercased()) part?"
+            latestHint = "Compare this line with the previous line near \(latestObservation.misconceptionType.displayName.lowercased())."
         } else {
-            latestHint = "Pause here. Point to the line that feels uncertain, then compare it with the line right before it."
+            latestHint = "Point to the line that feels uncertain."
         }
+        voice.speak(latestHint)
+    }
+
+    private func requestTeachMode() {
+        guard canRequestTeachMode else {
+            latestHint = "Try the current hint first."
+            voice.speak(latestHint)
+            return
+        }
+
+        lastTeachModeRequest = Date()
+        teachModeVariant = 0
+        isTeachMode = true
+        status = .paused
+        standController.send(.teachMode)
+    }
+
+    private func askTeachModeQuestion() {
+        teachModeVariant = (teachModeVariant + 1) % 2
+        latestHint = "Look at the changed line."
+        voice.speak(latestHint)
+    }
+
+    private func returnToObserveMode() {
+        isTeachMode = false
+        status = .watching
+        standController.returnToObserve()
+        latestHint = "Continue from the corrected step."
         voice.speak(latestHint)
     }
 
@@ -327,10 +432,10 @@ struct LiveTutorSessionView: View {
         switch status {
         case .paused:
             status = .watching
-            latestHint = "I am watching again. Keep the current line visible as you continue."
+            latestHint = "Watching again."
         case .watching, .hintReady:
             status = .paused
-            latestHint = "Paused. I will stay quiet until you resume or ask me to repeat the hint."
+            latestHint = "Paused."
         case .thinking:
             return
         }

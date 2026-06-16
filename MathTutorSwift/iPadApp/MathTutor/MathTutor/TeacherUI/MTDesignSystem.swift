@@ -1,40 +1,69 @@
 import SwiftUI
 
 enum MTTheme {
-    static let canvas = Color(.systemGroupedBackground)
-    static let ink = Color.primary
-    static let secondaryInk = Color.secondary
-    static let accent = Color.indigo
-    static let accentSoft = Color.indigo.opacity(0.12)
-    static let success = Color.green
-    static let warning = Color.orange
-    static let danger = Color.red
+    static let notebookPaper = Color(hex: 0xF4F1E6)
+    static let gridLine = Color(hex: 0xD8D2BD)
+    static let graphiteInk = Color(hex: 0x202421)
+    static let chalkboardGreen = Color(hex: 0x1F4D3A)
+    static let labGreen = Color(hex: 0x3F7D5A)
+    static let chemicalGold = Color(hex: 0xC6A04A)
+    static let paleYellowNote = Color(hex: 0xE9D88D)
+    static let errorRust = Color(hex: 0xA64B3C)
+    static let deepBlackGreen = Color(hex: 0x0D1F18)
+    static let disabledGray = Color(hex: 0x9A9A8C)
+
+    static let canvas = notebookPaper
+    static let ink = graphiteInk
+    static let secondaryInk = graphiteInk.opacity(0.68)
+    static let accent = chalkboardGreen
+    static let accentSoft = labGreen.opacity(0.14)
+    static let success = labGreen
+    static let warning = chemicalGold
+    static let danger = errorRust
 
     static let pagePadding: CGFloat = 28
-    static let cardRadius: CGFloat = 24
-    static let controlRadius: CGFloat = 18
-    static let compactRadius: CGFloat = 14
+    static let cardRadius: CGFloat = 8
+    static let controlRadius: CGFloat = 8
+    static let compactRadius: CGFloat = 6
 }
 
 struct MTBackground: View {
     var body: some View {
-        Color(.systemGroupedBackground)
-            .overlay(alignment: .topLeading) {
-                LinearGradient(
-                    colors: [
-                        Color(.systemBackground).opacity(0.92),
-                        Color(.secondarySystemGroupedBackground).opacity(0.64),
-                        Color(.tertiarySystemGroupedBackground).opacity(0.48)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            }
-        .ignoresSafeArea()
+        NotebookGridBackground()
+            .ignoresSafeArea()
     }
 }
 
-struct MTGlassPanel<Content: View>: View {
+struct NotebookGridBackground: View {
+    var spacing: CGFloat = 28
+
+    var body: some View {
+        MTTheme.notebookPaper
+            .overlay {
+                Canvas { context, size in
+                    var path = Path()
+                    var x: CGFloat = 0
+                    while x <= size.width {
+                        path.move(to: CGPoint(x: x, y: 0))
+                        path.addLine(to: CGPoint(x: x, y: size.height))
+                        x += spacing
+                    }
+
+                    var y: CGFloat = 0
+                    while y <= size.height {
+                        path.move(to: CGPoint(x: 0, y: y))
+                        path.addLine(to: CGPoint(x: size.width, y: y))
+                        y += spacing
+                    }
+
+                    context.stroke(path, with: .color(MTTheme.gridLine.opacity(0.55)), lineWidth: 0.7)
+                }
+                .allowsHitTesting(false)
+            }
+    }
+}
+
+struct MTNotebookPanel<Content: View>: View {
     let alignment: Alignment
     let content: Content
 
@@ -46,17 +75,18 @@ struct MTGlassPanel<Content: View>: View {
     var body: some View {
         content
             .frame(maxWidth: .infinity, alignment: alignment)
-            .padding(24)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: MTTheme.cardRadius, style: .continuous))
+            .padding(18)
+            .background(MTTheme.notebookPaper, in: RoundedRectangle(cornerRadius: MTTheme.cardRadius, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: MTTheme.cardRadius, style: .continuous)
-                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                    .stroke(MTTheme.gridLine, lineWidth: 1)
             }
-            .shadow(color: .black.opacity(0.055), radius: 18, x: 0, y: 10)
     }
 }
 
-struct MTFloatingGlass<Content: View>: View {
+typealias MTGlassPanel<Content: View> = MTNotebookPanel<Content>
+
+struct MTControlStrip<Content: View>: View {
     let content: Content
 
     init(@ViewBuilder content: () -> Content) {
@@ -65,15 +95,16 @@ struct MTFloatingGlass<Content: View>: View {
 
     var body: some View {
         content
-            .padding(14)
-            .mtLiquidGlass(in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .padding(8)
+            .background(MTTheme.notebookPaper.opacity(0.96), in: RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(.white.opacity(0.24), lineWidth: 1)
+                RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous)
+                    .stroke(MTTheme.gridLine, lineWidth: 1)
             }
-            .shadow(color: .black.opacity(0.18), radius: 22, x: 0, y: 12)
     }
 }
+
+typealias MTFloatingGlass<Content: View> = MTControlStrip<Content>
 
 struct MTMetricCard: View {
     let title: String
@@ -82,23 +113,21 @@ struct MTMetricCard: View {
     var tint: Color = MTTheme.accent
 
     var body: some View {
-        MTGlassPanel(alignment: .leading) {
-            VStack(alignment: .leading, spacing: 14) {
+        MTNotebookPanel(alignment: .leading) {
+            VStack(alignment: .leading, spacing: 10) {
                 Image(systemName: symbol)
-                    .font(.title2.weight(.semibold))
+                    .font(.title3.weight(.semibold))
                     .foregroundStyle(tint)
-                    .symbolRenderingMode(.hierarchical)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(value)
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.62)
-                    Text(title)
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
+                Text(value)
+                    .font(.system(size: 28, weight: .semibold, design: .serif))
+                    .foregroundStyle(MTTheme.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.62)
+                Text(title)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(MTTheme.secondaryInk)
+                    .lineLimit(2)
             }
         }
     }
@@ -111,15 +140,16 @@ struct MTStatusPill: View {
 
     var body: some View {
         Label(title, systemImage: symbol)
-            .font(.subheadline.weight(.semibold))
+            .font(.caption.weight(.semibold))
             .foregroundStyle(tint)
             .lineLimit(1)
             .minimumScaleFactor(0.72)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .mtLiquidGlass(in: Capsule(), tint: tint.opacity(0.08))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(MTTheme.notebookPaper.opacity(0.94), in: RoundedRectangle(cornerRadius: MTTheme.compactRadius, style: .continuous))
             .overlay {
-                Capsule().stroke(tint.opacity(0.18), lineWidth: 1)
+                RoundedRectangle(cornerRadius: MTTheme.compactRadius, style: .continuous)
+                    .stroke(tint.opacity(0.36), lineWidth: 1)
             }
     }
 }
@@ -128,14 +158,13 @@ struct MTPrimaryButton: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
-            .foregroundStyle(.white)
+            .foregroundStyle(MTTheme.notebookPaper)
             .lineLimit(1)
             .minimumScaleFactor(0.78)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 14)
-            .background(MTTheme.accent.gradient, in: RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous))
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .shadow(color: MTTheme.accent.opacity(configuration.isPressed ? 0.08 : 0.24), radius: 18, x: 0, y: 10)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(MTTheme.chalkboardGreen, in: RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous))
+            .opacity(configuration.isPressed ? 0.82 : 1)
     }
 }
 
@@ -143,27 +172,34 @@ struct MTSecondaryButton: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
+            .foregroundStyle(MTTheme.graphiteInk)
             .lineLimit(1)
             .minimumScaleFactor(0.78)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 13)
-            .mtLiquidGlass(in: RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 11)
+            .background(MTTheme.notebookPaper, in: RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous)
-                    .stroke(.white.opacity(0.24), lineWidth: 1)
+                    .stroke(MTTheme.gridLine, lineWidth: 1)
             }
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .opacity(configuration.isPressed ? 0.72 : 1)
     }
 }
 
 struct MTIconButton: ButtonStyle {
+    var tint: Color = MTTheme.graphiteInk
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.headline)
-            .foregroundStyle(.primary)
+            .font(.title3.weight(.semibold))
+            .foregroundStyle(tint)
             .frame(width: 48, height: 48)
-            .mtLiquidGlass(in: Circle())
-            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .background(MTTheme.notebookPaper.opacity(0.96), in: RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous)
+                    .stroke(MTTheme.gridLine, lineWidth: 1)
+            }
+            .opacity(configuration.isPressed ? 0.68 : 1)
     }
 }
 
@@ -174,11 +210,12 @@ struct MTSectionHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.title2.bold())
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(MTTheme.ink)
             if let subtitle {
                 Text(subtitle)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(MTTheme.secondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -192,25 +229,28 @@ struct MTInfoRow: View {
     var tint: Color = MTTheme.accent
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: 12) {
             Image(systemName: symbol)
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(tint)
-                .symbolRenderingMode(.hierarchical)
-                .frame(width: 34, height: 34)
-                .background(tint.opacity(0.12), in: Circle())
+                .frame(width: 30, height: 30)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.headline)
+                    .foregroundStyle(MTTheme.ink)
                 Text(detail)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(MTTheme.secondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(14)
-        .background(Color(.secondarySystemGroupedBackground).opacity(0.82), in: RoundedRectangle(cornerRadius: MTTheme.compactRadius, style: .continuous))
+        .padding(12)
+        .background(MTTheme.notebookPaper.opacity(0.78), in: RoundedRectangle(cornerRadius: MTTheme.compactRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: MTTheme.compactRadius, style: .continuous)
+                .stroke(MTTheme.gridLine.opacity(0.82), lineWidth: 1)
+        }
     }
 }
 
@@ -221,16 +261,24 @@ extension View {
             .background(MTBackground())
     }
 
-    @ViewBuilder
-    func mtLiquidGlass<S: Shape>(in shape: S, tint: Color? = nil) -> some View {
-        if #available(iOS 26.0, *) {
-            if let tint {
-                self.glassEffect(.regular.tint(tint), in: shape)
-            } else {
-                self.glassEffect(.regular, in: shape)
+    func mtNotebookSurface<S: Shape>(in shape: S, tint: Color? = nil) -> some View {
+        self
+            .background((tint ?? MTTheme.notebookPaper).opacity(0.96), in: shape)
+            .overlay {
+                shape.stroke(MTTheme.gridLine, lineWidth: 1)
             }
-        } else {
-            self.background(.regularMaterial, in: shape)
-        }
+    }
+
+    func mtLiquidGlass<S: Shape>(in shape: S, tint: Color? = nil) -> some View {
+        mtNotebookSurface(in: shape, tint: tint)
+    }
+}
+
+private extension Color {
+    init(hex: UInt32) {
+        let red = Double((hex >> 16) & 0xFF) / 255
+        let green = Double((hex >> 8) & 0xFF) / 255
+        let blue = Double(hex & 0xFF) / 255
+        self.init(red: red, green: green, blue: blue)
     }
 }

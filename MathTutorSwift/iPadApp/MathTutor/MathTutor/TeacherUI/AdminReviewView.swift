@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AdminReviewView: View {
     @EnvironmentObject private var appModel: AppModel
+    @State private var showingHolderSettings = false
 
     private var totalMistakes: Int {
         appModel.sessions.map(\.mistakeCount).reduce(0, +)
@@ -14,23 +15,18 @@ struct AdminReviewView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    MTGlassPanel(alignment: .leading) {
-                        VStack(alignment: .leading, spacing: 12) {
-                            MTStatusPill(title: "Research view", symbol: "chart.bar.doc.horizontal", tint: MTTheme.accent)
-                            Text("Admin Review")
-                                .font(.system(size: 50, weight: .bold, design: .rounded))
-                            Text("Inspect learning patterns, hint levels, and self-correction signals across students.")
-                                .font(.title3)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Research notebook")
+                            .font(.system(size: 44, weight: .semibold, design: .serif))
+                            .foregroundStyle(MTTheme.chalkboardGreen)
 
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 16)], spacing: 16) {
-                        MTMetricCard(title: "Students", value: "\(appModel.students.count)", symbol: "person.2.fill", tint: MTTheme.accent)
-                        MTMetricCard(title: "Sessions", value: "\(appModel.sessions.count)", symbol: "calendar.badge.clock", tint: MTTheme.success)
-                        MTMetricCard(title: "Mistakes", value: "\(totalMistakes)", symbol: "exclamationmark.triangle.fill", tint: MTTheme.warning)
-                        MTMetricCard(title: "Corrections", value: "\(totalCorrections)", symbol: "checkmark.circle.fill", tint: MTTheme.success)
+                        HStack(spacing: 14) {
+                            NotebookCount(value: "\(appModel.students.count)", label: "students")
+                            NotebookCount(value: "\(appModel.sessions.count)", label: "sessions")
+                            NotebookCount(value: "\(totalMistakes)", label: "mistakes")
+                            NotebookCount(value: "\(totalCorrections)", label: "corrections")
+                        }
                     }
 
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 360), spacing: 16)], spacing: 16) {
@@ -50,6 +46,19 @@ struct AdminReviewView: View {
                         Label("Back", systemImage: "chevron.left")
                     }
                 }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingHolderSettings = true
+                    } label: {
+                        Label("Holder", systemImage: "ipad.and.arrow.forward")
+                    }
+                }
+            }
+            .sheet(isPresented: $showingHolderSettings) {
+                HolderSettingsView(standController: appModel.standController)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
             }
         }
     }
@@ -116,6 +125,24 @@ struct AdminReviewView: View {
     }
 }
 
+private struct NotebookCount: View {
+    let value: String
+    let label: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text(value)
+                .font(.system(size: 22, weight: .semibold, design: .serif))
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(MTTheme.secondaryInk)
+        }
+        .foregroundStyle(MTTheme.ink)
+        .padding(.vertical, 4)
+        .padding(.trailing, 8)
+    }
+}
+
 private struct AdminStudentPatternRow: View {
     let student: StudentProfile
 
@@ -127,10 +154,10 @@ private struct AdminStudentPatternRow: View {
                 Spacer()
                 Text(student.mathLevel.displayName)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(MTTheme.secondaryInk)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(Color(.tertiarySystemFill), in: Capsule())
+                    .background(MTTheme.accentSoft, in: RoundedRectangle(cornerRadius: MTTheme.compactRadius, style: .continuous))
             }
 
             if student.misconceptionCounts.isEmpty {
@@ -151,6 +178,10 @@ private struct AdminStudentPatternRow: View {
             }
         }
         .padding(14)
-        .background(Color(.secondarySystemGroupedBackground).opacity(0.82), in: RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous))
+        .background(MTTheme.notebookPaper.opacity(0.78), in: RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous)
+                .stroke(MTTheme.gridLine, lineWidth: 1)
+        }
     }
 }

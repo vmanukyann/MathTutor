@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:MathTutor}/MathTutorSwift",
+            "name": "Debug MathTutorCoreChecks (MathTutorSwift)",
+            "target": "MathTutorCoreChecks",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug MathTutorCoreChecks (MathTutorSwift)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:MathTutor}/MathTutorSwift",
+            "name": "Release MathTutorCoreChecks (MathTutorSwift)",
+            "target": "MathTutorCoreChecks",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release MathTutorCoreChecks (MathTutorSwift)"
+        }
+    ]
+}

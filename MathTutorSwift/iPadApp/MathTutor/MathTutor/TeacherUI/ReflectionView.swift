@@ -13,7 +13,8 @@ struct ReflectionView: View {
                             MTStatusPill(title: "Session saved", symbol: "checkmark.seal.fill", tint: MTTheme.success)
 
                             Text("Reflection")
-                                .font(.system(size: 52, weight: .bold, design: .rounded))
+                                .font(.system(size: 52, weight: .semibold, design: .serif))
+                                .foregroundStyle(MTTheme.chalkboardGreen)
                             Text("\(session.student.name) practiced with guidance that supported correction without giving away final answers.")
                                 .font(.title3)
                                 .foregroundStyle(.secondary)
