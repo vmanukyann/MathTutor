@@ -71,6 +71,9 @@ struct StudentPickerView: View {
 
                 VStack {
                     HStack {
+                        VoiceControlIndicator(snapshot: appModel.voiceRecognizer.snapshot)
+                            .accessibilityLabel("Voice start available")
+
                         Spacer()
                         Button {
                             appModel.route = .admin
@@ -94,7 +97,27 @@ struct StudentPickerView: View {
             .onAppear {
                 selectedStudentID = selectedStudent?.id
             }
+            .onChange(of: appModel.voiceRecognizer.commandEventID) { _, _ in
+                handleVoiceCommand()
+            }
         }
+    }
+
+    private func handleVoiceCommand() {
+        guard let command = appModel.voiceRecognizer.lastRecognizedCommand else { return }
+        let action = appModel.voiceRouter.route(
+            command,
+            in: VoiceRouteContext(
+                location: .studentPicker,
+                sessionStatus: nil,
+                canEnterTeachMode: false,
+                holderControlsActive: false
+            )
+        )
+        appModel.voiceRecognizer.recordRoutedAction(action.displayName)
+
+        guard action == .startSession, let selectedStudent else { return }
+        appModel.select(selectedStudent)
     }
 
     private var emptyStudentButton: some View {

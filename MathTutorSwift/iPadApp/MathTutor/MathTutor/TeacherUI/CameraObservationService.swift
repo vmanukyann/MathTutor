@@ -12,6 +12,9 @@ final class CameraObservationService: NSObject, ObservableObject {
     private let photoOutput = AVCapturePhotoOutput()
 
     func start() async {
+        #if targetEnvironment(simulator)
+        configureAndStart()
+        #else
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
             configureAndStart()
@@ -21,6 +24,7 @@ final class CameraObservationService: NSObject, ObservableObject {
         default:
             authorizationDenied = true
         }
+        #endif
     }
 
     func stop() {
@@ -33,7 +37,13 @@ final class CameraObservationService: NSObject, ObservableObject {
     }
 
     func captureFrame() async throws -> Data {
-        try await withCheckedThrowingContinuation { continuation in
+        #if targetEnvironment(simulator)
+        guard !session.outputs.isEmpty else {
+            return simulatedPaperFrame()
+        }
+        #endif
+
+        return try await withCheckedThrowingContinuation { continuation in
             let delegate = PhotoCaptureDelegate { result in
                 continuation.resume(with: result)
             }
@@ -65,9 +75,16 @@ final class CameraObservationService: NSObject, ObservableObject {
             let input = try? AVCaptureDeviceInput(device: camera),
             session.canAddInput(input)
             else {
+                #if targetEnvironment(simulator)
+                authorizationDenied = false
+                isRunning = true
+                session.commitConfiguration()
+                return
+                #else
                 authorizationDenied = true
                 session.commitConfiguration()
                 return
+                #endif
             }
             session.addInput(input)
         }
@@ -84,6 +101,42 @@ final class CameraObservationService: NSObject, ObservableObject {
             Task { @MainActor in self.isRunning = true }
         }
     }
+
+    #if targetEnvironment(simulator)
+    private func simulatedPaperFrame() -> Data {
+        let size = CGSize(width: 900, height: 700)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let image = renderer.image { context in
+            UIColor(red: 0.96, green: 0.95, blue: 0.90, alpha: 1).setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+
+            UIColor(red: 0.82, green: 0.80, blue: 0.70, alpha: 1).setStroke()
+            for x in stride(from: 0, through: size.width, by: 36) {
+                context.cgContext.move(to: CGPoint(x: x, y: 0))
+                context.cgContext.addLine(to: CGPoint(x: x, y: size.height))
+            }
+            for y in stride(from: 0, through: size.height, by: 36) {
+                context.cgContext.move(to: CGPoint(x: 0, y: y))
+                context.cgContext.addLine(to: CGPoint(x: size.width, y: y))
+            }
+            context.cgContext.setLineWidth(1)
+            context.cgContext.strokePath()
+
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 52, weight: .semibold),
+                .foregroundColor: UIColor(red: 0.13, green: 0.14, blue: 0.13, alpha: 1)
+            ]
+            let lines = ["3(x + 2)", "= 3x + 3·2", "= 3x + 6"]
+            for (index, line) in lines.enumerated() {
+                line.draw(
+                    at: CGPoint(x: 260, y: 230 + CGFloat(index * 74)),
+                    withAttributes: attributes
+                )
+            }
+        }
+        return image.pngData() ?? Data()
+    }
+    #endif
 }
 
 private final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {

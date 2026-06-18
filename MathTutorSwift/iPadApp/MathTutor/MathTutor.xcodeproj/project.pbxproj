@@ -10,9 +10,22 @@
 		4145CD472FD7D248006D9E18 /* MathTutor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MathTutor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		4145CD552FE33A00006D9E18 /* Exceptions for "MathTutor" folder in "MathTutor" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 4145CD462FD7D248006D9E18 /* MathTutor */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		4145CD492FD7D248006D9E18 /* MathTutor */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				4145CD552FE33A00006D9E18 /* Exceptions for "MathTutor" folder in "MathTutor" target */,
+			);
 			path = MathTutor;
 			sourceTree = "<group>";
 		};
@@ -255,9 +268,12 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = MH58847JW4;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MathTutor/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "MathTutor uses the camera to observe handwritten math work during tutoring sessions.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "MathTutor can connect to a local motorized iPad holder for tutoring mode changes.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "MathTutor uses the microphone so students can ask for help and control tutoring hands-free while working.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "MathTutor uses speech recognition so students can ask questions and control tutoring hands-free during math practice.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -291,9 +307,12 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = MH58847JW4;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MathTutor/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "MathTutor uses the camera to observe handwritten math work during tutoring sessions.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "MathTutor can connect to a local motorized iPad holder for tutoring mode changes.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "MathTutor uses the microphone so students can ask for help and control tutoring hands-free while working.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "MathTutor uses speech recognition so students can ask questions and control tutoring hands-free during math practice.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

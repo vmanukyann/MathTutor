@@ -2,7 +2,7 @@ import Foundation
 
 enum AppSecrets {
     static let supabase = SupabaseConfiguration(
-        url: URL(string: "https://bviaqbyjgvrqsxvbesgq.supabase.co")!,
-        anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2aWFxYnlqZ3ZycXN4dmJlc2dxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkzOTAyNTYsImV4cCI6MjA4NDk2NjI1Nn0.sI5gMPenCp6CxSP87PQZEolmlaE172Hzfn8XI3otRak"
+        url: URL(string: "https://zydgcutdgkgjvstzrafo.supabase.co")!,
+        anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5ZGdjdXRkZ2tnanZzdHpyYWZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3Mzk2NDQsImV4cCI6MjA5NzMxNTY0NH0.fJNos0TO71a__J3LgZ56TaMP_N3wwKbkN4gF6gOcZTM"
     )
 }

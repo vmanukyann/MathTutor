@@ -21,5 +21,13 @@ struct RootView: View {
                 AdminReviewView()
             }
         }
+        .task {
+            await appModel.voiceRecognizer.startListening()
+        }
+        .onChange(of: appModel.voiceRecognizer.commandEventID) { _, _ in
+            guard appModel.voiceRecognizer.lastRecognizedCommand == .emergencyStop else { return }
+            appModel.standController.send(.stop)
+            appModel.voiceRecognizer.recordRoutedAction("Emergency stop")
+        }
     }
 }

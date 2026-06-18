@@ -4,6 +4,8 @@ import SwiftUI
 
 @MainActor
 final class AppModel: ObservableObject {
+    private(set) static weak var shared: AppModel?
+
     enum Route {
         case studentPicker
         case consent(StudentProfile)
@@ -16,6 +18,11 @@ final class AppModel: ObservableObject {
     @Published var students: [StudentProfile] = []
     @Published var sessions: [TutoringSession] = []
     @Published var standController = StandController()
+    @Published var voiceRecognizer = VoiceCommandRecognizer()
+    @Published var externalDisplay = ExternalDisplayState()
+
+    let voiceRouter = VoiceCommandRouter()
+    let externalDisplayController = ExternalDisplayController()
 
     private let store: FileStudentMemoryStore
     private let tutorClient = SupabaseTutorClient(configuration: AppSecrets.supabase)
@@ -29,6 +36,17 @@ final class AppModel: ObservableObject {
             directory: documents.appendingPathComponent("MathTutor")
         )
         load()
+        Self.shared = self
+    }
+
+    func startExternalDisplaySupport() {
+        externalDisplayController.start(appModel: self)
+        ExternalDisplaySceneDelegate.bindExistingWindows(to: self)
+    }
+
+    func refreshExternalDisplaySupport() {
+        externalDisplayController.refreshExternalDisplay()
+        ExternalDisplaySceneDelegate.bindExistingWindows(to: self)
     }
 
     func load() {
@@ -72,5 +90,22 @@ final class AppModel: ObservableObject {
     func returnHome() {
         load()
         route = .studentPicker
+        clearExternalTeachMode()
+    }
+
+    func setExternalDisplayConnected(_ isConnected: Bool) {
+        externalDisplay.setConnected(isConnected)
+    }
+
+    func showExternalTeachMode(student: StudentProfile, lines: [String]) {
+        externalDisplay.showTeachMode(studentName: student.name, lines: lines)
+    }
+
+    func updateExternalTeachMode(lines: [String]) {
+        externalDisplay.updateTeachMode(lines: lines)
+    }
+
+    func clearExternalTeachMode() {
+        externalDisplay.clearTeachMode()
     }
 }

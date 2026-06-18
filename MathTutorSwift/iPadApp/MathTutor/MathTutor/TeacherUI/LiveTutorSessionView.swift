@@ -31,7 +31,7 @@ struct LiveTutorSessionView: View {
 
     var body: some View {
         ZStack {
-            if isTeachMode {
+            if isTeachMode && !appModel.externalDisplay.isConnected {
                 teachModeView
             } else {
                 observeModeView
@@ -41,10 +41,21 @@ struct LiveTutorSessionView: View {
             await camera.start()
             standController.send(.observeMode)
         }
+        .onChange(of: appModel.voiceRecognizer.commandEventID) { _, _ in
+            handleVoiceCommand()
+        }
+        .onChange(of: appModel.externalDisplay.isConnected) { _, isConnected in
+            if isTeachMode, isConnected {
+                appModel.showExternalTeachMode(student: student, lines: teachModeLines)
+            } else if !isConnected {
+                appModel.clearExternalTeachMode()
+            }
+        }
         .onDisappear {
             camera.stop()
             voice.stop()
             standController.returnToObserve()
+            appModel.clearExternalTeachMode()
         }
     }
 
@@ -62,6 +73,13 @@ struct LiveTutorSessionView: View {
                     }
                     .overlay(alignment: .topTrailing) {
                         endButton
+                    }
+                    .overlay(alignment: .topLeading) {
+                        HStack(spacing: 8) {
+                            VoiceControlIndicator(snapshot: appModel.voiceRecognizer.snapshot)
+                            ExternalDisplayStatusIcon(isConnected: appModel.externalDisplay.isConnected)
+                        }
+                        .padding(18)
                     }
                     .overlay(alignment: .bottom) {
                         tutorDock
@@ -113,68 +131,130 @@ struct LiveTutorSessionView: View {
 
     private var tutorDock: some View {
         VStack(spacing: 8) {
-            if errorMessage != nil || standController.state.lastError != nil || latestObservation != nil || studentConfused {
+            if shouldShowHintNote {
                 minimalHintNote
             }
 
-            MTControlStrip {
-                HStack(spacing: 8) {
-                    Button {
-                        Task { await checkWork() }
-                    } label: {
-                        Image(systemName: status == .thinking ? "hourglass" : "viewfinder")
-                    }
-                    .buttonStyle(MTIconButton(tint: MTTheme.chalkboardGreen))
-                    .disabled(status == .thinking || status == .paused)
-                    .accessibilityLabel(status == .thinking ? "Checking work" : "Check work")
-
-                    Button {
-                        togglePause()
-                    } label: {
-                        Image(systemName: status == .paused ? "play.fill" : "pause.fill")
-                    }
-                    .buttonStyle(MTIconButton(tint: MTTheme.graphiteInk))
-                    .accessibilityLabel(status == .paused ? "Resume watching" : "Pause watching")
-
-                    Button {
-                        markConfused()
-                    } label: {
-                        Image(systemName: "questionmark")
-                    }
-                    .buttonStyle(MTIconButton(tint: MTTheme.chemicalGold))
-                    .disabled(status == .thinking)
-                    .accessibilityLabel("Ask a question")
-
-                    Button {
-                        requestTeachMode()
-                    } label: {
-                        Image(systemName: "rectangle.inset.filled.and.person.filled")
-                    }
-                    .buttonStyle(MTIconButton(tint: MTTheme.labGreen))
-                    .disabled(status == .thinking || !canRequestTeachMode)
-                    .accessibilityLabel("Enter teach mode")
-
-                    Button {
-                        markSelfCorrected()
-                    } label: {
-                        Image(systemName: "checkmark")
-                    }
-                    .buttonStyle(MTIconButton(tint: latestObservation == nil ? MTTheme.disabledGray : MTTheme.labGreen))
-                    .disabled(latestObservation == nil)
-                    .accessibilityLabel("Mark corrected")
-
-                    Button {
-                        voice.speak(latestHint)
-                    } label: {
-                        Image(systemName: "speaker.wave.2")
-                    }
-                    .buttonStyle(MTIconButton(tint: MTTheme.graphiteInk))
-                    .accessibilityLabel("Repeat hint")
-                }
+            if isTeachMode && appModel.externalDisplay.isConnected {
+                teachControlStrip
+                    .padding(.bottom, 16)
+            } else {
+                liveControlStrip
+                    .padding(.bottom, 16)
             }
-            .padding(.bottom, 16)
         }
         .padding(.horizontal, 18)
+    }
+
+    private var shouldShowHintNote: Bool {
+        if isTeachMode && appModel.externalDisplay.isConnected {
+            return false
+        }
+        return errorMessage != nil || standController.state.lastError != nil || latestObservation != nil || studentConfused
+    }
+
+    private var liveControlStrip: some View {
+        MTControlStrip {
+            HStack(spacing: 8) {
+                Button {
+                    Task { await checkWork() }
+                } label: {
+                    Image(systemName: status == .thinking ? "hourglass" : "viewfinder")
+                }
+                .buttonStyle(MTIconButton(tint: MTTheme.chalkboardGreen))
+                .disabled(status == .thinking || status == .paused)
+                .accessibilityLabel(status == .thinking ? "Checking work" : "Check work")
+
+                Button {
+                    togglePause()
+                } label: {
+                    Image(systemName: status == .paused ? "play.fill" : "pause.fill")
+                }
+                .buttonStyle(MTIconButton(tint: MTTheme.graphiteInk))
+                .accessibilityLabel(status == .paused ? "Resume watching" : "Pause watching")
+
+                Button {
+                    markConfused()
+                } label: {
+                    Image(systemName: "questionmark")
+                }
+                .buttonStyle(MTIconButton(tint: MTTheme.chemicalGold))
+                .disabled(status == .thinking)
+                .accessibilityLabel("Ask a question")
+
+                ExternalDisplayRouteButton(isConnected: appModel.externalDisplay.isConnected)
+
+                #if targetEnvironment(simulator)
+                ExternalDisplaySimulatorPreviewButton()
+                #endif
+
+                Button {
+                    requestTeachMode()
+                } label: {
+                    Image(systemName: appModel.externalDisplay.isConnected ? "airplayvideo" : "rectangle.inset.filled.and.person.filled")
+                }
+                .buttonStyle(MTIconButton(tint: MTTheme.labGreen))
+                .disabled(status == .thinking || !canRequestTeachMode)
+                .accessibilityLabel(appModel.externalDisplay.isConnected ? "Show teach mode on external display" : "Enter teach mode")
+
+                Button {
+                    markSelfCorrected()
+                } label: {
+                    Image(systemName: "checkmark")
+                }
+                .buttonStyle(MTIconButton(tint: latestObservation == nil ? MTTheme.disabledGray : MTTheme.labGreen))
+                .disabled(latestObservation == nil)
+                .accessibilityLabel("Mark corrected")
+
+                Button {
+                    voice.speak(latestHint)
+                } label: {
+                    Image(systemName: "speaker.wave.2")
+                }
+                .buttonStyle(MTIconButton(tint: MTTheme.graphiteInk))
+                .accessibilityLabel("Repeat hint")
+            }
+        }
+    }
+
+    private var teachControlStrip: some View {
+        MTControlStrip {
+            HStack(spacing: 8) {
+                Button {
+                    askTeachModeQuestion()
+                } label: {
+                    Image(systemName: "questionmark")
+                }
+                .buttonStyle(MTIconButton(tint: MTTheme.chemicalGold))
+                .accessibilityLabel("Ask a question")
+
+                Button {
+                    returnToObserveMode()
+                } label: {
+                    Image(systemName: "checkmark")
+                }
+                .buttonStyle(MTIconButton(tint: MTTheme.labGreen))
+                .accessibilityLabel("Understood")
+
+                Button {
+                    returnToObserveMode()
+                } label: {
+                    Image(systemName: "return")
+                }
+                .buttonStyle(MTIconButton(tint: MTTheme.graphiteInk))
+                .accessibilityLabel("Return to work")
+
+                if standController.state.currentMode == .teach {
+                    Button {
+                        standController.send(.stop)
+                    } label: {
+                        Image(systemName: "stop.fill")
+                    }
+                    .buttonStyle(MTIconButton(tint: MTTheme.errorRust))
+                    .accessibilityLabel("Emergency stop holder")
+                }
+            }
+        }
     }
 
     private var minimalHintNote: some View {
@@ -204,6 +284,11 @@ struct LiveTutorSessionView: View {
             MTBackground()
 
             VStack {
+                HStack {
+                    VoiceControlIndicator(snapshot: appModel.voiceRecognizer.snapshot)
+                    Spacer()
+                }
+
                 Spacer()
 
                 VStack(spacing: 26) {
@@ -223,44 +308,8 @@ struct LiveTutorSessionView: View {
 
                 Spacer()
 
-                MTControlStrip {
-                    HStack(spacing: 8) {
-                        Button {
-                            askTeachModeQuestion()
-                        } label: {
-                            Image(systemName: "questionmark")
-                        }
-                        .buttonStyle(MTIconButton(tint: MTTheme.chemicalGold))
-                        .accessibilityLabel("Ask a question")
-
-                        Button {
-                            returnToObserveMode()
-                        } label: {
-                            Image(systemName: "checkmark")
-                        }
-                        .buttonStyle(MTIconButton(tint: MTTheme.labGreen))
-                        .accessibilityLabel("Understood")
-
-                        Button {
-                            returnToObserveMode()
-                        } label: {
-                            Image(systemName: "return")
-                        }
-                        .buttonStyle(MTIconButton(tint: MTTheme.graphiteInk))
-                        .accessibilityLabel("Return to work")
-
-                        if standController.state.currentMode == .teach {
-                            Button {
-                                standController.send(.stop)
-                            } label: {
-                                Image(systemName: "stop.fill")
-                            }
-                            .buttonStyle(MTIconButton(tint: MTTheme.errorRust))
-                            .accessibilityLabel("Emergency stop holder")
-                        }
-                    }
-                }
-                .padding(.bottom, 24)
+                teachControlStrip
+                    .padding(.bottom, 24)
             }
             .padding(MTTheme.pagePadding)
         }
@@ -301,6 +350,15 @@ struct LiveTutorSessionView: View {
 
     private var canRequestTeachMode: Bool {
         Date().timeIntervalSince(lastTeachModeRequest) >= teachModeCooldown
+    }
+
+    private var voiceRouteContext: VoiceRouteContext {
+        VoiceRouteContext(
+            location: isTeachMode ? .teachMode : .liveSession,
+            sessionStatus: status,
+            canEnterTeachMode: canRequestTeachMode,
+            holderControlsActive: true
+        )
     }
 
     private var teachModeLines: [String] {
@@ -381,6 +439,40 @@ struct LiveTutorSessionView: View {
         }
     }
 
+    private func handleVoiceCommand() {
+        guard let command = appModel.voiceRecognizer.lastRecognizedCommand else { return }
+        let action = appModel.voiceRouter.route(command, in: voiceRouteContext)
+        appModel.voiceRecognizer.recordRoutedAction(action.displayName)
+
+        switch action {
+        case .enterTeachMode:
+            requestTeachMode()
+        case .returnToWork, .confirmUnderstood:
+            returnToObserveMode()
+        case .nextStep, .differentWay:
+            advanceTeachModeStep()
+        case .repeatHint:
+            voice.speak(latestHint)
+        case .askQuestion:
+            handleVoiceQuestion()
+        case .pauseSession:
+            if status != .paused {
+                togglePause()
+            }
+        case .resumeSession:
+            if status == .paused {
+                togglePause()
+            }
+            Task {
+                await appModel.voiceRecognizer.startListening()
+            }
+        case .emergencyStop:
+            latestHint = "Holder stopped."
+        case .startSession, .ignore(_):
+            break
+        }
+    }
+
     private func markSelfCorrected() {
         guard var last = session.events.popLast() else { return }
         last.studentSelfCorrected = true
@@ -400,6 +492,29 @@ struct LiveTutorSessionView: View {
         voice.speak(latestHint)
     }
 
+    private func handleVoiceQuestion() {
+        appModel.voiceRecognizer.setQuestionMode(true)
+        studentConfused = true
+
+        if isTeachMode {
+            askTeachModeQuestion()
+            appModel.voiceRecognizer.setQuestionMode(false)
+            return
+        }
+
+        latestHint = "I heard you. Checking this step."
+        voice.speak(latestHint)
+
+        Task {
+            await checkWork()
+            if errorMessage != nil {
+                latestHint = "I can still help locally: compare this line with the one just above it."
+                voice.speak(latestHint)
+            }
+            appModel.voiceRecognizer.setQuestionMode(false)
+        }
+    }
+
     private func requestTeachMode() {
         guard canRequestTeachMode else {
             latestHint = "Try the current hint first."
@@ -411,19 +526,31 @@ struct LiveTutorSessionView: View {
         teachModeVariant = 0
         isTeachMode = true
         status = .paused
+        if appModel.externalDisplay.isConnected {
+            latestHint = "Teach Mode is on the display."
+            appModel.showExternalTeachMode(student: student, lines: teachModeLines)
+        }
         standController.send(.teachMode)
     }
 
     private func askTeachModeQuestion() {
-        teachModeVariant = (teachModeVariant + 1) % 2
+        advanceTeachModeStep()
         latestHint = "Look at the changed line."
         voice.speak(latestHint)
+    }
+
+    private func advanceTeachModeStep() {
+        teachModeVariant = (teachModeVariant + 1) % 2
+        if appModel.externalDisplay.isConnected {
+            appModel.updateExternalTeachMode(lines: teachModeLines)
+        }
     }
 
     private func returnToObserveMode() {
         isTeachMode = false
         status = .watching
         standController.returnToObserve()
+        appModel.clearExternalTeachMode()
         latestHint = "Continue from the corrected step."
         voice.speak(latestHint)
     }
@@ -444,6 +571,7 @@ struct LiveTutorSessionView: View {
 
     private func endSession() {
         session.endedAt = Date()
+        appModel.clearExternalTeachMode()
         appModel.finishSession(session)
     }
 }

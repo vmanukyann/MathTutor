@@ -12,6 +12,15 @@ struct ConsentView: View {
             ZStack {
                 MTBackground()
 
+                VStack {
+                    HStack {
+                        VoiceControlIndicator(snapshot: appModel.voiceRecognizer.snapshot)
+                        Spacer()
+                    }
+                    Spacer()
+                }
+                .padding(24)
+
                 VStack(spacing: 24) {
                     Spacer()
 
@@ -62,6 +71,27 @@ struct ConsentView: View {
                 .padding(MTTheme.pagePadding)
             }
             .toolbar(.hidden, for: .navigationBar)
+            .onChange(of: appModel.voiceRecognizer.commandEventID) { _, _ in
+                handleVoiceCommand()
+            }
+        }
+    }
+
+    private func handleVoiceCommand() {
+        guard let command = appModel.voiceRecognizer.lastRecognizedCommand else { return }
+        let action = appModel.voiceRouter.route(
+            command,
+            in: VoiceRouteContext(
+                location: .consent,
+                sessionStatus: nil,
+                canEnterTeachMode: false,
+                holderControlsActive: false
+            )
+        )
+        appModel.voiceRecognizer.recordRoutedAction(action.displayName)
+
+        if action == .startSession, studyLogging, noAnswerMode {
+            appModel.acceptConsent(for: student)
         }
     }
 }

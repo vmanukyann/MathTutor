@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct HolderSettingsView: View {
+    @EnvironmentObject private var appModel: AppModel
     @ObservedObject var standController: StandController
 
     var body: some View {
@@ -91,6 +92,8 @@ struct HolderSettingsView: View {
                             }
                         }
                     }
+
+                    VoiceDebugPanel(recognizer: appModel.voiceRecognizer)
                 }
                 .padding(MTTheme.pagePadding)
             }
