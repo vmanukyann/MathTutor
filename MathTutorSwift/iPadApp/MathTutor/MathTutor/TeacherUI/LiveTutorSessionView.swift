@@ -71,6 +71,10 @@ struct LiveTutorSessionView: View {
                     .overlay(alignment: .center) {
                         paperGuide
                     }
+                    .overlay(alignment: .top) {
+                        scanStatusBadge
+                            .padding(.top, 18)
+                    }
                     .overlay(alignment: .topTrailing) {
                         endButton
                     }
@@ -110,8 +114,7 @@ struct LiveTutorSessionView: View {
     }
 
     private var paperGuide: some View {
-        Rectangle()
-            .strokeBorder(MTTheme.notebookPaper.opacity(0.78), style: StrokeStyle(lineWidth: 2, dash: [12, 12]))
+        ScanFrameGuide()
             .frame(maxWidth: 720, maxHeight: 500)
             .padding(.horizontal, 44)
             .allowsHitTesting(false)
@@ -133,6 +136,8 @@ struct LiveTutorSessionView: View {
         VStack(spacing: 8) {
             if shouldShowHintNote {
                 minimalHintNote
+            } else if !isTeachMode {
+                scanCoachNote
             }
 
             if isTeachMode && appModel.externalDisplay.isConnected {
@@ -151,6 +156,52 @@ struct LiveTutorSessionView: View {
             return false
         }
         return errorMessage != nil || standController.state.lastError != nil || latestObservation != nil || studentConfused
+    }
+
+    private var scanStatusBadge: some View {
+        HStack(spacing: 8) {
+            Image(systemName: scanStatusSymbol)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(scanStatusTint)
+
+            Text(scanStatusTitle)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(MTTheme.deepBlackGreen)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(MTTheme.notebookPaper.opacity(0.96), in: RoundedRectangle(cornerRadius: MTTheme.compactRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: MTTheme.compactRadius, style: .continuous)
+                .stroke(scanStatusTint.opacity(0.45), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Scan status: \(scanStatusTitle)")
+    }
+
+    private var scanCoachNote: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "doc.viewfinder")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(MTTheme.labGreen)
+                .accessibilityHidden(true)
+
+            Text(scanCoachText)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(MTTheme.deepBlackGreen)
+                .lineLimit(1)
+                .minimumScaleFactor(0.74)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(MTTheme.notebookPaper.opacity(0.96), in: RoundedRectangle(cornerRadius: MTTheme.compactRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: MTTheme.compactRadius, style: .continuous)
+                .stroke(MTTheme.gridLine, lineWidth: 1)
+        }
+        .frame(maxWidth: 520)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(scanCoachText)
     }
 
     private var liveControlStrip: some View {
@@ -346,6 +397,58 @@ struct LiveTutorSessionView: View {
             return MTTheme.chemicalGold
         }
         return MTTheme.chalkboardGreen
+    }
+
+    private var scanStatusTitle: String {
+        switch status {
+        case .watching:
+            return "Line up paper"
+        case .thinking:
+            return "Checking"
+        case .hintReady:
+            return "Hint ready"
+        case .paused:
+            return "Paused"
+        }
+    }
+
+    private var scanStatusSymbol: String {
+        switch status {
+        case .watching:
+            return "viewfinder"
+        case .thinking:
+            return "hourglass"
+        case .hintReady:
+            return "lightbulb"
+        case .paused:
+            return "pause.fill"
+        }
+    }
+
+    private var scanStatusTint: Color {
+        switch status {
+        case .watching:
+            return MTTheme.labGreen
+        case .thinking:
+            return MTTheme.chemicalGold
+        case .hintReady:
+            return MTTheme.chalkboardGreen
+        case .paused:
+            return MTTheme.disabledGray
+        }
+    }
+
+    private var scanCoachText: String {
+        switch status {
+        case .watching:
+            return "Fit the page inside the frame, then tap viewfinder."
+        case .thinking:
+            return "Hold still while MathTutor checks this step."
+        case .hintReady:
+            return "Use ? for help or checkmark when corrected."
+        case .paused:
+            return "Paused. Tap play to scan again."
+        }
     }
 
     private var canRequestTeachMode: Bool {
@@ -573,5 +676,51 @@ struct LiveTutorSessionView: View {
         session.endedAt = Date()
         appModel.clearExternalTeachMode()
         appModel.finishSession(session)
+    }
+}
+
+private struct ScanFrameGuide: View {
+    private let cornerLength: CGFloat = 54
+    private let cornerWidth: CGFloat = 4
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            let height = proxy.size.height
+
+            ZStack {
+                Rectangle()
+                    .strokeBorder(MTTheme.notebookPaper.opacity(0.58), style: StrokeStyle(lineWidth: 1.4, dash: [10, 12]))
+
+                corner(at: .topLeading)
+                    .position(x: cornerLength / 2, y: cornerLength / 2)
+
+                corner(at: .topTrailing)
+                    .rotationEffect(.degrees(90))
+                    .position(x: width - cornerLength / 2, y: cornerLength / 2)
+
+                corner(at: .bottomTrailing)
+                    .rotationEffect(.degrees(180))
+                    .position(x: width - cornerLength / 2, y: height - cornerLength / 2)
+
+                corner(at: .bottomLeading)
+                    .rotationEffect(.degrees(270))
+                    .position(x: cornerLength / 2, y: height - cornerLength / 2)
+            }
+        }
+    }
+
+    private func corner(at alignment: Alignment) -> some View {
+        ZStack(alignment: alignment) {
+            Rectangle()
+                .fill(MTTheme.paleYellowNote.opacity(0.96))
+                .frame(width: cornerLength, height: cornerWidth)
+
+            Rectangle()
+                .fill(MTTheme.paleYellowNote.opacity(0.96))
+                .frame(width: cornerWidth, height: cornerLength)
+        }
+        .frame(width: cornerLength, height: cornerLength, alignment: alignment)
+        .shadow(color: .black.opacity(0.14), radius: 2, x: 0, y: 1)
     }
 }
