@@ -14,14 +14,18 @@ struct LiveTutorSessionView: View {
     @State private var latestHint = "Place the iPad above the page. I will watch quietly until you ask me to check."
     @State private var latestObservation: TutorObservation?
     @State private var errorMessage: String?
+    @State private var checkFailure: CheckFailure?
+    @State private var airPlayMessage: String?
     @State private var studentConfused = false
     @State private var isTeachMode = false
     @State private var lastTeachModeRequest = Date.distantPast
+    @State private var lastCheckRequest = Date.distantPast
     @State private var teachModeVariant = 0
 
     private let tutorClient = SupabaseTutorClient(configuration: AppSecrets.supabase)
     private let policy = TutorPolicy(noAnswerMode: true)
     private let teachModeCooldown: TimeInterval = 8
+    private let checkWorkCooldown: TimeInterval = 1.5
 
     init(student: StudentProfile, standController: StandController) {
         self.student = student
@@ -45,11 +49,14 @@ struct LiveTutorSessionView: View {
             handleVoiceCommand()
         }
         .onChange(of: appModel.externalDisplay.isConnected) { _, isConnected in
-            if isTeachMode, isConnected {
+            if isConnected, latestObservation != nil {
                 appModel.showExternalTeachMode(student: student, lines: teachModeLines)
             } else if !isConnected {
                 appModel.clearExternalTeachMode()
             }
+            airPlayMessage = isConnected
+                ? "AirPlay connected. Show Step will use the TV."
+                : "AirPlay disconnected. Tap AirPlay and choose your TV."
         }
         .onDisappear {
             camera.stop()
@@ -72,18 +79,7 @@ struct LiveTutorSessionView: View {
                         paperGuide
                     }
                     .overlay(alignment: .top) {
-                        scanStatusBadge
-                            .padding(.top, 18)
-                    }
-                    .overlay(alignment: .topTrailing) {
-                        endButton
-                    }
-                    .overlay(alignment: .topLeading) {
-                        HStack(spacing: 8) {
-                            VoiceControlIndicator(snapshot: appModel.voiceRecognizer.snapshot)
-                            ExternalDisplayStatusIcon(isConnected: appModel.externalDisplay.isConnected)
-                        }
-                        .padding(18)
+                        topControlBar
                     }
                     .overlay(alignment: .bottom) {
                         tutorDock
@@ -114,22 +110,52 @@ struct LiveTutorSessionView: View {
     }
 
     private var paperGuide: some View {
-        ScanFrameGuide()
-            .frame(maxWidth: 720, maxHeight: 500)
-            .padding(.horizontal, 44)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+        VStack(spacing: 12) {
+            Text("Put your work inside the frame.")
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(MTTheme.deepBlackGreen)
+                .lineLimit(1)
+                .minimumScaleFactor(0.76)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(MTTheme.notebookPaper.opacity(0.96), in: RoundedRectangle(cornerRadius: MTTheme.compactRadius, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: MTTheme.compactRadius, style: .continuous)
+                        .stroke(MTTheme.gridLine, lineWidth: 1)
+                }
+
+            ScanFrameGuide()
+                .aspectRatio(1.42, contentMode: .fit)
+                .frame(maxWidth: 720)
+        }
+        .padding(.horizontal, 44)
+        .padding(.bottom, 88)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private var topControlBar: some View {
+        ZStack {
+            HStack {
+                VoiceControlIndicator(snapshot: appModel.voiceRecognizer.snapshot)
+                Spacer()
+                endButton
+            }
+
+            scanStatusBadge
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 18)
     }
 
     private var endButton: some View {
         Button {
             endSession()
         } label: {
-            Image(systemName: "xmark")
+            Label("End", systemImage: "xmark")
         }
-        .buttonStyle(MTIconButton(tint: MTTheme.errorRust))
+        .buttonStyle(MTLabeledControlButton(tint: MTTheme.errorRust))
         .accessibilityLabel("End session")
-        .padding(18)
     }
 
     private var tutorDock: some View {
@@ -155,7 +181,11 @@ struct LiveTutorSessionView: View {
         if isTeachMode && appModel.externalDisplay.isConnected {
             return false
         }
-        return errorMessage != nil || standController.state.lastError != nil || latestObservation != nil || studentConfused
+        return errorMessage != nil
+            || standController.state.lastError != nil
+            || latestObservation != nil
+            || studentConfused
+            || airPlayMessage != nil
     }
 
     private var scanStatusBadge: some View {
@@ -206,64 +236,71 @@ struct LiveTutorSessionView: View {
 
     private var liveControlStrip: some View {
         MTControlStrip {
-            HStack(spacing: 8) {
+            VStack(spacing: 10) {
                 Button {
                     Task { await checkWork() }
                 } label: {
-                    Image(systemName: status == .thinking ? "hourglass" : "viewfinder")
+                    Label(status == .thinking ? "Checking..." : "Check Work", systemImage: status == .thinking ? "hourglass" : "viewfinder")
+                        .frame(minWidth: 220)
                 }
-                .buttonStyle(MTIconButton(tint: MTTheme.chalkboardGreen))
+                .buttonStyle(MTLabeledControlButton(fill: MTTheme.chalkboardGreen, isFilled: true))
                 .disabled(status == .thinking || status == .paused)
                 .accessibilityLabel(status == .thinking ? "Checking work" : "Check work")
 
-                Button {
-                    togglePause()
-                } label: {
-                    Image(systemName: status == .paused ? "play.fill" : "pause.fill")
+                HStack(spacing: 8) {
+                    Button {
+                        handleVoiceQuestion()
+                    } label: {
+                        Label("Ask", systemImage: "questionmark")
+                    }
+                    .buttonStyle(MTLabeledControlButton(tint: MTTheme.chemicalGold))
+                    .disabled(status == .thinking)
+                    .accessibilityLabel("Ask a question")
+
+                    Button {
+                        requestTeachMode()
+                    } label: {
+                        Label("Show Step", systemImage: appModel.externalDisplay.isConnected ? "airplayvideo" : "rectangle.inset.filled.and.person.filled")
+                    }
+                    .buttonStyle(MTLabeledControlButton(tint: MTTheme.labGreen))
+                    .disabled(status == .thinking || !canRequestTeachMode)
+                    .accessibilityLabel(appModel.externalDisplay.isConnected ? "Show step on external display" : "Show step")
+
+                    Button {
+                        togglePause()
+                    } label: {
+                        Label(status == .paused ? "Resume" : "Pause", systemImage: status == .paused ? "play.fill" : "pause.fill")
+                    }
+                    .buttonStyle(MTLabeledControlButton(tint: MTTheme.graphiteInk))
+                    .accessibilityLabel(status == .paused ? "Resume watching" : "Pause watching")
                 }
-                .buttonStyle(MTIconButton(tint: MTTheme.graphiteInk))
-                .accessibilityLabel(status == .paused ? "Resume watching" : "Pause watching")
 
-                Button {
-                    markConfused()
-                } label: {
-                    Image(systemName: "questionmark")
+                HStack(spacing: 8) {
+                    ExternalDisplayRouteButton(
+                        isConnected: appModel.externalDisplay.isConnected
+                    )
+
+                    #if targetEnvironment(simulator)
+                    ExternalDisplaySimulatorPreviewButton(previewLines: teachModeLines)
+                    #endif
+
+                    Button {
+                        markSelfCorrected()
+                    } label: {
+                        Label("Mark Fixed", systemImage: "checkmark")
+                    }
+                    .buttonStyle(MTLabeledControlButton(tint: latestObservation == nil ? MTTheme.disabledGray : MTTheme.labGreen))
+                    .disabled(latestObservation == nil)
+                    .accessibilityLabel("Mark corrected")
+
+                    Button {
+                        voice.speak(latestHint)
+                    } label: {
+                        Label("Repeat", systemImage: "speaker.wave.2")
+                    }
+                    .buttonStyle(MTLabeledControlButton(tint: MTTheme.graphiteInk))
+                    .accessibilityLabel("Repeat hint")
                 }
-                .buttonStyle(MTIconButton(tint: MTTheme.chemicalGold))
-                .disabled(status == .thinking)
-                .accessibilityLabel("Ask a question")
-
-                ExternalDisplayRouteButton(isConnected: appModel.externalDisplay.isConnected)
-
-                #if targetEnvironment(simulator)
-                ExternalDisplaySimulatorPreviewButton()
-                #endif
-
-                Button {
-                    requestTeachMode()
-                } label: {
-                    Image(systemName: appModel.externalDisplay.isConnected ? "airplayvideo" : "rectangle.inset.filled.and.person.filled")
-                }
-                .buttonStyle(MTIconButton(tint: MTTheme.labGreen))
-                .disabled(status == .thinking || !canRequestTeachMode)
-                .accessibilityLabel(appModel.externalDisplay.isConnected ? "Show teach mode on external display" : "Enter teach mode")
-
-                Button {
-                    markSelfCorrected()
-                } label: {
-                    Image(systemName: "checkmark")
-                }
-                .buttonStyle(MTIconButton(tint: latestObservation == nil ? MTTheme.disabledGray : MTTheme.labGreen))
-                .disabled(latestObservation == nil)
-                .accessibilityLabel("Mark corrected")
-
-                Button {
-                    voice.speak(latestHint)
-                } label: {
-                    Image(systemName: "speaker.wave.2")
-                }
-                .buttonStyle(MTIconButton(tint: MTTheme.graphiteInk))
-                .accessibilityLabel("Repeat hint")
             }
         }
     }
@@ -309,19 +346,18 @@ struct LiveTutorSessionView: View {
     }
 
     private var minimalHintNote: some View {
-        HStack(spacing: 10) {
-            Image(systemName: hintIcon)
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(hintTint)
+        ScrollView {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: hintIcon)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(hintTint)
 
-            Text(visibleHint)
-                .font(.callout.weight(.medium))
-                .foregroundStyle(MTTheme.ink)
-                .lineLimit(2)
-                .minimumScaleFactor(0.78)
+                TutorHintView(content: visibleHint)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        .frame(maxWidth: 720, maxHeight: 240)
         .background(MTTheme.paleYellowNote.opacity(0.96), in: RoundedRectangle(cornerRadius: MTTheme.compactRadius, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: MTTheme.compactRadius, style: .continuous)
@@ -342,18 +378,23 @@ struct LiveTutorSessionView: View {
 
                 Spacer()
 
-                VStack(spacing: 26) {
-                    ForEach(Array(teachModeLines.enumerated()), id: \.offset) { _, line in
-                        Text(line)
-                            .font(.system(size: 68, weight: .semibold, design: .serif))
-                            .foregroundStyle(MTTheme.deepBlackGreen)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.42)
-                            .accessibilityLabel(line)
+                ScrollView {
+                    VStack(spacing: 24) {
+                        ForEach(Array(teachModeLines.enumerated()), id: \.offset) { _, line in
+                            LaTeXMathView(latex: line, fontSize: 58)
+                                .frame(maxWidth: .infinity, minHeight: 82)
+                                .accessibilityLabel(line)
+                        }
+                    }
+                    .padding(32)
+                    .background(MTTheme.notebookPaper)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: MTTheme.cardRadius)
+                            .stroke(MTTheme.gridLine, lineWidth: 1)
                     }
                 }
                 .padding(.horizontal, 34)
-                .frame(maxWidth: 960)
+                .frame(maxWidth: 960, maxHeight: 560)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Math steps")
 
@@ -376,12 +417,18 @@ struct LiveTutorSessionView: View {
         if let standError = standController.state.lastError {
             return standError
         }
+        if let airPlayMessage {
+            return airPlayMessage
+        }
         return latestHint
     }
 
     private var hintIcon: String {
         if errorMessage != nil || standController.state.lastError != nil {
             return "exclamationmark.triangle"
+        }
+        if airPlayMessage != nil {
+            return appModel.externalDisplay.isConnected ? "airplayvideo.circle.fill" : "airplayvideo"
         }
         if studentConfused {
             return "questionmark"
@@ -393,6 +440,9 @@ struct LiveTutorSessionView: View {
         if errorMessage != nil || standController.state.lastError != nil {
             return MTTheme.errorRust
         }
+        if airPlayMessage != nil {
+            return appModel.externalDisplay.isConnected ? MTTheme.labGreen : MTTheme.chemicalGold
+        }
         if studentConfused {
             return MTTheme.chemicalGold
         }
@@ -400,9 +450,18 @@ struct LiveTutorSessionView: View {
     }
 
     private var scanStatusTitle: String {
+        if let checkFailure {
+            switch checkFailure {
+            case .couldNotRead:
+                return "Could not read"
+            case .backend:
+                return "Backend error"
+            }
+        }
+
         switch status {
         case .watching:
-            return "Line up paper"
+            return "Listening"
         case .thinking:
             return "Checking"
         case .hintReady:
@@ -413,6 +472,10 @@ struct LiveTutorSessionView: View {
     }
 
     private var scanStatusSymbol: String {
+        if checkFailure != nil {
+            return "exclamationmark.triangle"
+        }
+
         switch status {
         case .watching:
             return "viewfinder"
@@ -426,6 +489,10 @@ struct LiveTutorSessionView: View {
     }
 
     private var scanStatusTint: Color {
+        if checkFailure != nil {
+            return MTTheme.errorRust
+        }
+
         switch status {
         case .watching:
             return MTTheme.labGreen
@@ -439,15 +506,24 @@ struct LiveTutorSessionView: View {
     }
 
     private var scanCoachText: String {
+        if let checkFailure {
+            switch checkFailure {
+            case .couldNotRead:
+                return "Line up the paper and try Check Work again."
+            case .backend:
+                return "MathTutor could not connect. Try again in a moment."
+            }
+        }
+
         switch status {
         case .watching:
-            return "Fit the page inside the frame, then tap viewfinder."
+            return "Put your work inside the frame, then tap Check Work."
         case .thinking:
             return "Hold still while MathTutor checks this step."
         case .hintReady:
-            return "Use ? for help or checkmark when corrected."
+            return "Read the hint, then tap Show Step or Mark Fixed."
         case .paused:
-            return "Paused. Tap play to scan again."
+            return "Paused. Tap Resume to scan again."
         }
     }
 
@@ -465,52 +541,78 @@ struct LiveTutorSessionView: View {
     }
 
     private var teachModeLines: [String] {
-        if teachModeVariant == 1 {
-            return alternateTeachModeLines
-        }
-
-        switch latestObservation?.misconceptionType {
-        case .signError:
-            return ["-2x + 5 = 11", "-2x = 6", "x = -3"]
-        case .equationBalance:
-            return ["2x + 7 = 15", "2x = 15 - 7", "2x = 8", "x = 4"]
-        case .invalidCancellation:
-            return ["(x + 3) / x", "≠ 1 + 3", "= 1 + 3/x"]
-        case .slopeIntercept:
-            return ["y = mx + b", "y = 2x + 3", "m = 2", "b = 3"]
-        case .factoring:
-            return ["x² + 5x + 6", "= (x + 2)(x + 3)"]
-        case .satStrategy:
-            return ["2x + 6 = 18", "2(x + 3) = 18", "x + 3 = 9"]
-        case .distribution, .unclearWork, .none:
-            return ["3(x + 2)", "= 3x + 3·2", "= 3x + 6"]
-        }
+        let sets = teachModeLineSets
+        return sets[teachModeVariant % sets.count]
     }
 
-    private var alternateTeachModeLines: [String] {
-        switch latestObservation?.misconceptionType {
+    private var teachModeLineSets: [[String]] {
+        guard let latestObservation else {
+            return [["a(b + c)", "= ab + ac"]]
+        }
+
+        if let backendSteps = latestObservation.teachSteps?
+            .map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) })
+            .filter({ !$0.isEmpty }),
+            !backendSteps.isEmpty {
+            return [backendSteps]
+        }
+
+        switch latestObservation.misconceptionType {
         case .signError:
-            return ["-2x = 6", "x = 6 / -2", "x = -3"]
+            return [
+                ["-2x + 5 = 11", "-2x = 11 - 5", "-2x = 6"],
+                ["-2x = 6", "x = \\frac{6}{-2}", "x = -3"]
+            ]
         case .equationBalance:
-            return ["2x + 7 = 15", "-7        -7", "2x = 8"]
+            return [
+                ["2x + 7 = 15", "-7        -7", "2x = 8"],
+                ["2x = 8", "x = \\frac{8}{2}", "x = 4"]
+            ]
         case .invalidCancellation:
-            return ["(x + 3) / x", "= x/x + 3/x", "= 1 + 3/x"]
+            return [
+                ["\\frac{x + 3}{x}", "\\neq 1 + 3"],
+                ["\\frac{x + 3}{x}", "= \\frac{x}{x} + \\frac{3}{x}", "= 1 + \\frac{3}{x}"]
+            ]
         case .slopeIntercept:
-            return ["y = 2x + 3", "rise / run = 2", "start = 3"]
+            return [
+                ["y = mx + b", "m = \\text{slope}", "b = \\text{start}"],
+                ["y = 2x + 3", "m = 2", "b = 3"]
+            ]
         case .factoring:
-            return ["2 · 3 = 6", "2 + 3 = 5", "(x + 2)(x + 3)"]
+            return [
+                ["x² + 5x + 6", "2 · 3 = 6", "2 + 3 = 5"],
+                ["x² + 5x + 6", "= (x + 2)(x + 3)"]
+            ]
         case .satStrategy:
-            return ["2x + 6 = 18", "2x = 12", "x = 6"]
-        case .distribution, .unclearWork, .none:
-            return ["3(x + 2)", "= (3·x) + (3·2)", "= 3x + 6"]
+            return [
+                ["2x + 6 = 18", "2(x + 3) = 18", "x + 3 = 9"],
+                ["2x + 6 = 18", "2x = 12", "x = 6"]
+            ]
+        case .distribution:
+            return [
+                ["a(b + c)", "= ab + ac"],
+                ["k(x + n)", "= kx + kn"]
+            ]
+        case .unclearWork:
+            return [
+                ["□", "↓", "□"],
+                ["□", "=", "□"]
+            ]
         }
     }
 
     private func checkWork() async {
-        guard status != .paused else { return }
+        guard status != .paused, status != .thinking else { return }
+        guard Date().timeIntervalSince(lastCheckRequest) >= checkWorkCooldown else { return }
+
+        lastCheckRequest = Date()
         status = .thinking
         errorMessage = nil
+        checkFailure = nil
+        airPlayMessage = nil
         studentConfused = false
+        latestHint = "Checking."
+        voice.speak(latestHint)
 
         do {
             let imageData = try await camera.captureFrame()
@@ -524,21 +626,43 @@ struct LiveTutorSessionView: View {
             observation.hint = policy.sanitizedHint(observation.hint)
 
             latestObservation = observation
-            latestHint = observation.hint
-            session.events.append(TutorEvent(observation: observation))
             status = .hintReady
 
-            if policy.shouldInterrupt(for: observation) {
+            if observation.misconceptionType == .unclearWork {
+                latestHint = "I could not read a clear step yet. Try lining up the paper."
+                checkFailure = .couldNotRead
+            } else if observation.mistakeDetected {
                 let opening = policy.personalizedOpening(
                     student: student,
                     misconception: observation.misconceptionType
                 )
-                voice.speak("\(opening). \(observation.hint)")
+                latestHint = "\(opening). \(observation.hint)"
+            } else {
+                latestHint = "I do not see a clear issue yet."
             }
+
+            session.events.append(
+                TutorEvent(
+                    observation: observation,
+                    tutorMessage: latestHint
+                )
+            )
+            if appModel.externalDisplay.isConnected {
+                appModel.showExternalTeachMode(student: student, lines: teachModeLines)
+            }
+
+            speakHintWithDisplayGuidance()
         } catch {
-            errorMessage = error.localizedDescription
-            latestHint = "Try steadying the iPad and checking again."
+            if error is CameraError {
+                checkFailure = .couldNotRead
+                latestHint = "I could not check it yet. Try lining up the paper."
+            } else {
+                checkFailure = .backend
+                latestHint = "I could not check it yet. Try again in a moment."
+            }
+            errorMessage = latestHint
             status = .watching
+            voice.speak(latestHint)
         }
     }
 
@@ -549,7 +673,7 @@ struct LiveTutorSessionView: View {
 
         switch action {
         case .enterTeachMode:
-            requestTeachMode()
+            Task { await showHowToDoThis() }
         case .returnToWork, .confirmUnderstood:
             returnToObserveMode()
         case .nextStep, .differentWay:
@@ -558,6 +682,16 @@ struct LiveTutorSessionView: View {
             voice.speak(latestHint)
         case .askQuestion:
             handleVoiceQuestion()
+        case .checkWork:
+            Task { await checkWork() }
+        case .connectAirPlay:
+            handleVoiceAirPlayRequest()
+        case .displayOnScreen:
+            displayCurrentTeaching()
+        case .markCorrected:
+            markSelfCorrected()
+        case .endSession:
+            endSession()
         case .pauseSession:
             if status != .paused {
                 togglePause()
@@ -576,22 +710,42 @@ struct LiveTutorSessionView: View {
         }
     }
 
+    private func handleVoiceAirPlayRequest() {
+        if appModel.externalDisplay.isConnected {
+            airPlayMessage = "Screen connected. Say display this on the screen."
+        } else {
+            airPlayMessage = "Open Control Center, tap Screen Mirroring, and choose your TV."
+        }
+        latestHint = airPlayMessage ?? latestHint
+        voice.speak(latestHint)
+    }
+
+    private func displayCurrentTeaching() {
+        guard latestObservation != nil else {
+            Task { await showHowToDoThis() }
+            return
+        }
+
+        teachModeVariant = 0
+        if appModel.externalDisplay.isConnected {
+            appModel.showExternalTeachMode(student: student, lines: teachModeLines)
+            latestHint = "Displayed on the screen."
+            voice.speak(latestHint)
+        } else {
+            isTeachMode = true
+            status = .paused
+            latestHint = "No TV screen is connected. Showing it on the iPad."
+            voice.speak(latestHint)
+            standController.send(.teachMode)
+        }
+    }
+
     private func markSelfCorrected() {
         guard var last = session.events.popLast() else { return }
         last.studentSelfCorrected = true
         session.events.append(last)
         studentConfused = false
         latestHint = "Keep the fixed line visible."
-        voice.speak(latestHint)
-    }
-
-    private func markConfused() {
-        studentConfused = true
-        if let latestObservation {
-            latestHint = "Compare this line with the previous line near \(latestObservation.misconceptionType.displayName.lowercased())."
-        } else {
-            latestHint = "Point to the line that feels uncertain."
-        }
         voice.speak(latestHint)
     }
 
@@ -605,15 +759,8 @@ struct LiveTutorSessionView: View {
             return
         }
 
-        latestHint = "I heard you. Checking this step."
-        voice.speak(latestHint)
-
         Task {
-            await checkWork()
-            if errorMessage != nil {
-                latestHint = "I can still help locally: compare this line with the one just above it."
-                voice.speak(latestHint)
-            }
+            await showHowToDoThis()
             appModel.voiceRecognizer.setQuestionMode(false)
         }
     }
@@ -632,8 +779,29 @@ struct LiveTutorSessionView: View {
         if appModel.externalDisplay.isConnected {
             latestHint = "Teach Mode is on the display."
             appModel.showExternalTeachMode(student: student, lines: teachModeLines)
+        } else {
+            latestHint = "AirPlay is not connected. Look at the iPad screen for the math hint."
+            voice.speak(latestHint)
         }
         standController.send(.teachMode)
+    }
+
+    private func showHowToDoThis() async {
+        guard status != .thinking else { return }
+        latestHint = "Let me look at this step."
+        voice.speak(latestHint)
+
+        await checkWork()
+        guard latestObservation != nil, checkFailure == nil else { return }
+        requestTeachMode()
+    }
+
+    private func speakHintWithDisplayGuidance() {
+        if appModel.externalDisplay.isConnected {
+            voice.speak(latestHint)
+        } else {
+            voice.speak("AirPlay is not connected. Look at the iPad screen for your hint. \(latestHint)")
+        }
     }
 
     private func askTeachModeQuestion() {
@@ -679,48 +847,65 @@ struct LiveTutorSessionView: View {
     }
 }
 
+private enum CheckFailure {
+    case couldNotRead
+    case backend
+}
+
 private struct ScanFrameGuide: View {
     private let cornerLength: CGFloat = 54
     private let cornerWidth: CGFloat = 4
 
     var body: some View {
-        GeometryReader { proxy in
-            let width = proxy.size.width
-            let height = proxy.size.height
-
+        GeometryReader { _ in
             ZStack {
                 Rectangle()
                     .strokeBorder(MTTheme.notebookPaper.opacity(0.58), style: StrokeStyle(lineWidth: 1.4, dash: [10, 12]))
 
-                corner(at: .topLeading)
-                    .position(x: cornerLength / 2, y: cornerLength / 2)
+                corner(horizontal: .right, vertical: .down)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
-                corner(at: .topTrailing)
-                    .rotationEffect(.degrees(90))
-                    .position(x: width - cornerLength / 2, y: cornerLength / 2)
+                corner(horizontal: .left, vertical: .down)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
 
-                corner(at: .bottomTrailing)
-                    .rotationEffect(.degrees(180))
-                    .position(x: width - cornerLength / 2, y: height - cornerLength / 2)
+                corner(horizontal: .right, vertical: .up)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
 
-                corner(at: .bottomLeading)
-                    .rotationEffect(.degrees(270))
-                    .position(x: cornerLength / 2, y: height - cornerLength / 2)
+                corner(horizontal: .left, vertical: .up)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             }
         }
     }
 
-    private func corner(at alignment: Alignment) -> some View {
-        ZStack(alignment: alignment) {
-            Rectangle()
+    private func corner(horizontal: HorizontalDirection, vertical: VerticalDirection) -> some View {
+        ZStack(alignment: .topLeading) {
+            Capsule(style: .continuous)
                 .fill(MTTheme.paleYellowNote.opacity(0.96))
                 .frame(width: cornerLength, height: cornerWidth)
+                .position(
+                    x: horizontal == .right ? cornerLength / 2 : cornerLength / -2,
+                    y: 0
+                )
 
-            Rectangle()
+            Capsule(style: .continuous)
                 .fill(MTTheme.paleYellowNote.opacity(0.96))
                 .frame(width: cornerWidth, height: cornerLength)
+                .position(
+                    x: 0,
+                    y: vertical == .down ? cornerLength / 2 : cornerLength / -2
+                )
         }
-        .frame(width: cornerLength, height: cornerLength, alignment: alignment)
+        .frame(width: 1, height: 1)
         .shadow(color: .black.opacity(0.14), radius: 2, x: 0, y: 1)
+    }
+
+    private enum HorizontalDirection {
+        case left
+        case right
+    }
+
+    private enum VerticalDirection {
+        case up
+        case down
     }
 }

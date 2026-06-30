@@ -3,19 +3,24 @@ import SwiftUI
 #if targetEnvironment(simulator)
 struct ExternalDisplaySimulatorPreviewButton: View {
     @EnvironmentObject private var appModel: AppModel
+    let previewLines: [String]
     @State private var isPresented = false
+
+    init(previewLines: [String] = ["Demo board", "Put work under camera", "Then tap Check Work"]) {
+        self.previewLines = previewLines
+    }
 
     var body: some View {
         Button {
             appModel.setExternalDisplayConnected(true)
             if !appModel.externalDisplay.isTeaching {
-                appModel.updateExternalTeachMode(lines: ["3(x + 2)", "= 3x + 3·2", "= 3x + 6"])
+                appModel.updateExternalTeachMode(lines: previewLines)
             }
             isPresented = true
         } label: {
-            Image(systemName: "rectangle.on.rectangle")
+            Label("Preview", systemImage: "rectangle.on.rectangle")
         }
-        .buttonStyle(MTIconButton(tint: MTTheme.labGreen))
+        .buttonStyle(MTSecondaryButton())
         .accessibilityLabel("Preview external display")
         .fullScreenCover(isPresented: $isPresented) {
             ExternalDisplaySimulatorPreview()

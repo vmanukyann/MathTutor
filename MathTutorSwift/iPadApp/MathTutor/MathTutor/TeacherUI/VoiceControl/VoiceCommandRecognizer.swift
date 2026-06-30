@@ -1,4 +1,4 @@
-import AVFoundation
+ import AVFoundation
 import Combine
 import Foundation
 import Speech
@@ -106,8 +106,13 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
 
         let audioSession = AVAudioSession.sharedInstance()
         do {
-            try audioSession.setCategory(.record, mode: .measurement, options: [.duckOthers])
+            try audioSession.setCategory(
+                .playAndRecord,
+                mode: .measurement,
+                options: [.defaultToSpeaker, .allowBluetoothHFP, .duckOthers]
+            )
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+            try audioSession.overrideOutputAudioPort(.speaker)
         } catch {
             snapshot.lastError = error.localizedDescription
             snapshot.currentVoiceMode = .disabled

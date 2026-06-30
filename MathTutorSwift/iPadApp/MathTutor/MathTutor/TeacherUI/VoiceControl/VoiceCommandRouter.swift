@@ -24,6 +24,11 @@ enum VoiceRoutedAction: Equatable, Sendable {
     case repeatHint
     case differentWay
     case askQuestion
+    case checkWork
+    case connectAirPlay
+    case displayOnScreen
+    case markCorrected
+    case endSession
     case pauseSession
     case resumeSession
     case emergencyStop
@@ -39,6 +44,11 @@ enum VoiceRoutedAction: Equatable, Sendable {
         case .repeatHint: "Repeat hint"
         case .differentWay: "Different way"
         case .askQuestion: "Ask question"
+        case .checkWork: "Check work"
+        case .connectAirPlay: "Connect AirPlay"
+        case .displayOnScreen: "Display on screen"
+        case .markCorrected: "Mark corrected"
+        case .endSession: "End session"
         case .pauseSession: "Pause session"
         case .resumeSession: "Resume session"
         case .emergencyStop: "Emergency stop"
@@ -102,6 +112,44 @@ struct VoiceCommandRouter: Sendable {
                 return .askQuestion
             default:
                 return .ignore("question requires an active session")
+            }
+
+        case .checkWork:
+            guard context.location == .liveSession else {
+                return .ignore("check work requires a live session")
+            }
+            guard context.sessionStatus != .thinking else {
+                return .ignore("check work is already running")
+            }
+            return .checkWork
+
+        case .connectAirPlay:
+            switch context.location {
+            case .liveSession, .teachMode:
+                return .connectAirPlay
+            default:
+                return .ignore("AirPlay requires an active session")
+            }
+
+        case .displayOnScreen:
+            switch context.location {
+            case .liveSession, .teachMode:
+                return .displayOnScreen
+            default:
+                return .ignore("display requires an active session")
+            }
+
+        case .markCorrected:
+            return context.location == .liveSession
+                ? .markCorrected
+                : .ignore("correction requires a live session")
+
+        case .endSession:
+            switch context.location {
+            case .liveSession, .teachMode:
+                return .endSession
+            default:
+                return .ignore("end requires an active session")
             }
 
         case .pause:

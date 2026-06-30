@@ -16,6 +16,7 @@ type TutorObservation = {
   hint: string;
   teacher_note: string;
   work_summary: string;
+  teach_steps?: string[];
   final_answer_blocked: true;
 };
 
@@ -81,6 +82,13 @@ function normalizeObservation(value: unknown): TutorObservation {
     ? mistakeRaw as TutorObservation["misconception_type"]
     : "unclear_work";
 
+  const teachSteps = Array.isArray(row.teach_steps)
+    ? row.teach_steps
+      .filter((step): step is string => typeof step === "string" && step.trim().length > 0)
+      .map((step) => step.trim())
+      .slice(0, 5)
+    : undefined;
+
   return {
     mistake_detected: typeof row.mistake_detected === "boolean"
       ? row.mistake_detected
@@ -93,6 +101,7 @@ function normalizeObservation(value: unknown): TutorObservation {
       : "Pause and compare this line to the one above it.",
     teacher_note: typeof row.teacher_note === "string" ? row.teacher_note.trim() : "",
     work_summary: typeof row.work_summary === "string" ? row.work_summary.trim() : "",
+    teach_steps: teachSteps && teachSteps.length > 0 ? teachSteps : undefined,
     final_answer_blocked: true,
   };
 }
@@ -123,7 +132,7 @@ function observeWorkPrompt(student: any, session: any): string {
   const noAnswerMode = session?.no_answer_mode !== false;
 
   return `
-You are MathTutor, a real-time Socratic math teacher watching ${name}'s handwritten paper.
+You are MathTutor, a real-time guided math teacher watching ${name}'s handwritten paper.
 
 Student context:
 - Name: ${name}
@@ -138,6 +147,14 @@ Hard rules:
 - Never reveal the final answer.
 - Never solve the full problem.
 - Give one short teacher-like hint or clarifying question.
+- Provide 2 to 5 short math-only teach_steps that can be shown on a classroom display.
+- teach_steps should match the student's visible work or misconception.
+- teach_steps should not dump a full final answer unless the visible step already contains it.
+- Write every mathematical expression in valid LaTeX.
+- In hint prose, wrap each math expression in \\( and \\), for example: "Compare \\(2(x+3)\\) with \\(2x+3\\)."
+- Each teach_steps item must contain only raw display LaTeX without dollar signs or prose.
+- Prefer LaTeX commands such as \\frac{a}{b}, x^{2}, \\cdot, \\neq, and \\sqrt{x}; never use Unicode superscripts or slash fractions.
+- Because the response is JSON, escape every LaTeX backslash as a JSON double backslash. For example, return "\\\\frac{1}{2}", never "\\frac{1}{2}".
 - If the work is correct or too unclear, say so without inventing a mistake.
 
 Return ONLY valid JSON with exactly these keys:
@@ -146,9 +163,10 @@ Return ONLY valid JSON with exactly these keys:
   "confidence": "low" | "medium" | "high",
   "misconception_type": "sign_error" | "distribution" | "equation_balance" | "invalid_cancellation" | "slope_intercept" | "factoring" | "sat_strategy" | "unclear_work",
   "hint_level": 1 | 2 | 3 | 4,
-  "hint": "one short Socratic hint without the final answer",
+  "hint": "one short guided hint without the final answer",
   "teacher_note": "brief private note for admin/research review",
   "work_summary": "brief summary of what the student appears to be doing",
+  "teach_steps": ["short math-only display line", "next short math-only display line"],
   "final_answer_blocked": true
 }
 `.trim();

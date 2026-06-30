@@ -186,6 +186,28 @@ struct MTSecondaryButton: ButtonStyle {
     }
 }
 
+struct MTLabeledControlButton: ButtonStyle {
+    var tint: Color = MTTheme.graphiteInk
+    var fill: Color = MTTheme.notebookPaper
+    var isFilled: Bool = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.callout.weight(.semibold))
+            .foregroundStyle(isFilled ? MTTheme.notebookPaper : tint)
+            .lineLimit(1)
+            .minimumScaleFactor(0.74)
+            .padding(.horizontal, 13)
+            .padding(.vertical, 10)
+            .background(isFilled ? fill : MTTheme.notebookPaper, in: RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous)
+                    .stroke(isFilled ? fill.opacity(0.35) : MTTheme.gridLine, lineWidth: 1)
+            }
+            .opacity(configuration.isPressed ? 0.74 : 1)
+    }
+}
+
 struct MTIconButton: ButtonStyle {
     var tint: Color = MTTheme.graphiteInk
 

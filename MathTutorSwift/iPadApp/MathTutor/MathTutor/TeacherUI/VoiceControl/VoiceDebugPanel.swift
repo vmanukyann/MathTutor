@@ -10,6 +10,11 @@ struct VoiceDebugPanel: View {
         .pause,
         .resume,
         .askQuestion,
+        .checkWork,
+        .connectAirPlay,
+        .displayOnScreen,
+        .markCorrected,
+        .endSession,
         .emergencyStop,
         .confirmUnderstood
     ]

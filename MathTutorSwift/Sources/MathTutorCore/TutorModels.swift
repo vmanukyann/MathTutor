@@ -40,6 +40,7 @@ public struct TutorObservation: Codable, Equatable, Sendable {
     public var hint: String
     public var teacherNote: String
     public var workSummary: String
+    public var teachSteps: [String]?
     public var finalAnswerBlocked: Bool
 
     public init(
@@ -50,6 +51,7 @@ public struct TutorObservation: Codable, Equatable, Sendable {
         hint: String,
         teacherNote: String,
         workSummary: String,
+        teachSteps: [String]? = nil,
         finalAnswerBlocked: Bool = true
     ) {
         self.mistakeDetected = mistakeDetected
@@ -59,6 +61,7 @@ public struct TutorObservation: Codable, Equatable, Sendable {
         self.hint = hint
         self.teacherNote = teacherNote
         self.workSummary = workSummary
+        self.teachSteps = teachSteps
         self.finalAnswerBlocked = finalAnswerBlocked
     }
 }
@@ -67,17 +70,20 @@ public struct TutorEvent: Identifiable, Codable, Equatable, Sendable {
     public var id: UUID
     public var timestamp: Date
     public var observation: TutorObservation
+    public var tutorMessage: String?
     public var studentSelfCorrected: Bool
 
     public init(
         id: UUID = UUID(),
         timestamp: Date = Date(),
         observation: TutorObservation,
+        tutorMessage: String? = nil,
         studentSelfCorrected: Bool = false
     ) {
         self.id = id
         self.timestamp = timestamp
         self.observation = observation
+        self.tutorMessage = tutorMessage
         self.studentSelfCorrected = studentSelfCorrected
     }
 }

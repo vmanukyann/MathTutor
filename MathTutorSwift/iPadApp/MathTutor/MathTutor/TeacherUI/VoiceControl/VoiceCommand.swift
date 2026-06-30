@@ -8,6 +8,11 @@ enum VoiceCommand: String, CaseIterable, Identifiable, Sendable {
     case repeatHint
     case differentWay
     case askQuestion
+    case checkWork
+    case connectAirPlay
+    case displayOnScreen
+    case markCorrected
+    case endSession
     case pause
     case resume
     case emergencyStop
@@ -25,6 +30,11 @@ enum VoiceCommand: String, CaseIterable, Identifiable, Sendable {
         case .repeatHint: "Repeat"
         case .differentWay: "Different way"
         case .askQuestion: "Question"
+        case .checkWork: "Check work"
+        case .connectAirPlay: "Connect AirPlay"
+        case .displayOnScreen: "Display on screen"
+        case .markCorrected: "Mark corrected"
+        case .endSession: "End session"
         case .pause: "Pause"
         case .resume: "Resume"
         case .emergencyStop: "Emergency stop"
@@ -42,6 +52,11 @@ enum VoiceCommand: String, CaseIterable, Identifiable, Sendable {
         case .repeatHint: "speaker.wave.2"
         case .differentWay: "arrow.triangle.2.circlepath"
         case .askQuestion: "questionmark"
+        case .checkWork: "viewfinder"
+        case .connectAirPlay: "airplayvideo"
+        case .displayOnScreen: "rectangle.on.rectangle"
+        case .markCorrected: "checkmark.circle"
+        case .endSession: "xmark"
         case .pause: "pause.fill"
         case .resume: "play.fill"
         case .emergencyStop: "stop.fill"
@@ -69,6 +84,16 @@ enum VoiceCommandParser {
             command = .pause
         } else if containsAny(normalized, emergencyStopPhrases) {
             command = .emergencyStop
+        } else if containsAny(normalized, checkWorkPhrases) {
+            command = .checkWork
+        } else if containsAny(normalized, displayPhrases) {
+            command = .displayOnScreen
+        } else if containsAny(normalized, airPlayPhrases) {
+            command = .connectAirPlay
+        } else if containsAny(normalized, correctionPhrases) {
+            command = .markCorrected
+        } else if containsAny(normalized, endSessionPhrases) {
+            command = .endSession
         } else if containsAny(normalized, startPhrases) {
             command = .startSession
         } else if containsAny(normalized, returnPhrases) {
@@ -130,6 +155,13 @@ enum VoiceCommandParser {
 
     private static let teachPhrases = [
         "show me",
+        "show me how",
+        "show me how to do this",
+        "can you show me",
+        "can you show me how",
+        "can you show me how to do this",
+        "how do i do this",
+        "help me do this",
         "help me",
         "flip",
         "flip the ipad",
@@ -147,6 +179,9 @@ enum VoiceCommandParser {
     private static let repeatPhrases = [
         "again",
         "repeat",
+        "repeat this",
+        "say that again",
+        "repeat the hint",
         "explain again"
     ]
 
@@ -163,6 +198,61 @@ enum VoiceCommandParser {
         "can i ask something",
         "wait",
         "hold on"
+    ]
+
+    private static let checkWorkPhrases = [
+        "check my work",
+        "can you check my work",
+        "check my work out",
+        "can you check my work out",
+        "see if there are any incorrect",
+        "see if anything is incorrect",
+        "are there any incorrect steps",
+        "are there any mistakes",
+        "is anything wrong",
+        "check this",
+        "look at my work",
+        "did i do this right",
+        "am i right",
+        "scan my work",
+        "check the problem"
+    ]
+
+    private static let airPlayPhrases = [
+        "connect to airplay",
+        "connect to the tv",
+        "connect to bravia tv",
+        "use airplay"
+    ]
+
+    private static let displayPhrases = [
+        "display this on the screen",
+        "display this on screen",
+        "display this on the tv",
+        "show this on the screen",
+        "show this on screen",
+        "show this on the tv",
+        "put this on the screen",
+        "put this on the tv",
+        "show on the tv",
+        "put it on the tv"
+    ]
+
+    private static let correctionPhrases = [
+        "mark fixed",
+        "i fixed it",
+        "i corrected it",
+        "that is fixed",
+        "mark corrected"
+    ]
+
+    private static let endSessionPhrases = [
+        "end session",
+        "end the session",
+        "finish session",
+        "finish the session",
+        "im done",
+        "i am done"
     ]
 
     private static let pausePhrases = [

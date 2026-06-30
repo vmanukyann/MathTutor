@@ -18,18 +18,8 @@ struct ExternalStudentDisplayView: View {
 
 struct ExternalDisplayStandbyView: View {
     var body: some View {
-        VStack(spacing: 18) {
-            Image(systemName: "rectangle.on.rectangle")
-                .font(.system(size: 48, weight: .medium))
-                .foregroundStyle(MTTheme.labGreen)
-                .accessibilityHidden(true)
-
-            Text("Ready")
-                .font(.system(size: 44, weight: .semibold, design: .serif))
-                .foregroundStyle(MTTheme.deepBlackGreen)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("External display ready")
+        Color.clear
+            .accessibilityLabel("MathTutor display ready")
     }
 }
 
@@ -37,17 +27,23 @@ struct MathOnlyDisplay: View {
     let lines: [String]
 
     var body: some View {
-        VStack(spacing: 32) {
-            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                Text(line)
-                    .font(.system(size: 76, weight: .semibold, design: .serif))
-                    .foregroundStyle(MTTheme.deepBlackGreen)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.34)
-                    .accessibilityLabel(line)
+        ScrollView {
+            VStack(spacing: 28) {
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                    LaTeXMathView(latex: line, fontSize: 68)
+                        .frame(maxWidth: .infinity, minHeight: 96)
+                        .accessibilityLabel(line)
+                }
+            }
+            .padding(40)
+            .background(MTTheme.notebookPaper)
+            .overlay {
+                RoundedRectangle(cornerRadius: MTTheme.cardRadius)
+                    .stroke(MTTheme.gridLine, lineWidth: 1)
             }
         }
         .padding(.horizontal, 56)
+        .padding(.vertical, 36)
         .frame(maxWidth: 1100)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Math steps")

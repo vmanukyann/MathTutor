@@ -4,46 +4,55 @@ struct AdminReviewView: View {
     @EnvironmentObject private var appModel: AppModel
     @State private var showingHolderSettings = false
 
-    private var totalMistakes: Int {
-        appModel.sessions.map(\.mistakeCount).reduce(0, +)
-    }
-
-    private var totalCorrections: Int {
-        appModel.sessions.map(\.selfCorrectionCount).reduce(0, +)
-    }
-
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Research notebook")
-                            .font(.system(size: 44, weight: .semibold, design: .serif))
-                            .foregroundStyle(MTTheme.chalkboardGreen)
+            VStack(spacing: 24) {
+                Text("Choose a student")
+                    .font(.system(size: 38, weight: .semibold, design: .serif))
+                    .foregroundStyle(MTTheme.chalkboardGreen)
 
-                        HStack(spacing: 14) {
-                            NotebookCount(value: "\(appModel.students.count)", label: "students")
-                            NotebookCount(value: "\(appModel.sessions.count)", label: "sessions")
-                            NotebookCount(value: "\(totalMistakes)", label: "mistakes")
-                            NotebookCount(value: "\(totalCorrections)", label: "corrections")
+                if appModel.students.isEmpty {
+                    Text("No students yet")
+                        .font(.title3)
+                        .foregroundStyle(MTTheme.secondaryInk)
+                } else {
+                    VStack(spacing: 10) {
+                        ForEach(appModel.students) { student in
+                            NavigationLink {
+                                AdminStudentDetailView(student: student)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "person.crop.circle")
+                                        .font(.title2)
+                                    Text(student.name)
+                                        .font(.title3.weight(.semibold))
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .foregroundStyle(MTTheme.secondaryInk)
+                                }
+                                .foregroundStyle(MTTheme.graphiteInk)
+                                .padding(16)
+                                .frame(maxWidth: 520)
+                                .background(MTTheme.notebookPaper)
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: MTTheme.controlRadius)
+                                        .stroke(MTTheme.gridLine, lineWidth: 1)
+                                }
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
-
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 360), spacing: 16)], spacing: 16) {
-                        patternsPanel
-                        sessionsPanel
-                    }
                 }
-                .padding(MTTheme.pagePadding)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(MTTheme.pagePadding)
             .background(MTBackground())
-            .navigationTitle("Admin")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
                         appModel.returnHome()
                     } label: {
-                        Label("Back", systemImage: "chevron.left")
+                        Label("Home", systemImage: "house")
                     }
                 }
 
@@ -62,126 +71,91 @@ struct AdminReviewView: View {
             }
         }
     }
-
-    private var patternsPanel: some View {
-        MTGlassPanel(alignment: .leading) {
-            VStack(alignment: .leading, spacing: 18) {
-                MTSectionHeader(
-                    title: "Student Patterns",
-                    subtitle: "Longitudinal signals that make the tutor feel like it knows the learner."
-                )
-
-                if appModel.students.isEmpty {
-                    MTInfoRow(
-                        title: "No profiles yet",
-                        detail: "Create a student and run a session to populate research signals.",
-                        symbol: "person.crop.circle.badge.plus"
-                    )
-                } else {
-                    ForEach(appModel.students) { student in
-                        AdminStudentPatternRow(student: student)
-                    }
-                }
-            }
-        }
-    }
-
-    private var sessionsPanel: some View {
-        MTGlassPanel(alignment: .leading) {
-            VStack(alignment: .leading, spacing: 18) {
-                MTSectionHeader(
-                    title: "Recent Sessions",
-                    subtitle: "A quick audit trail of camera checks, hinting, and corrections."
-                )
-
-                if appModel.sessions.isEmpty {
-                    MTInfoRow(
-                        title: "No completed sessions",
-                        detail: "Finished iPad tutoring sessions will appear here for review.",
-                        symbol: "calendar.badge.clock"
-                    )
-                } else {
-                    ForEach(appModel.sessions.prefix(8)) { session in
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text(session.student.name)
-                                    .font(.headline)
-                                Spacer()
-                                Text(session.startedAt, style: .date)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            HStack(spacing: 8) {
-                                MTStatusPill(title: "\(session.events.count) checks", symbol: "viewfinder", tint: MTTheme.accent)
-                                MTStatusPill(title: "\(session.selfCorrectionCount) corrections", symbol: "checkmark.circle.fill", tint: MTTheme.success)
-                            }
-                        }
-                        .padding(.vertical, 10)
-                    }
-                }
-            }
-        }
-    }
 }
 
-private struct NotebookCount: View {
-    let value: String
-    let label: String
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 4) {
-            Text(value)
-                .font(.system(size: 22, weight: .semibold, design: .serif))
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(MTTheme.secondaryInk)
-        }
-        .foregroundStyle(MTTheme.ink)
-        .padding(.vertical, 4)
-        .padding(.trailing, 8)
-    }
-}
-
-private struct AdminStudentPatternRow: View {
+private struct AdminStudentDetailView: View {
+    @EnvironmentObject private var appModel: AppModel
     let student: StudentProfile
 
+    private var sessions: [TutoringSession] {
+        appModel.sessions.filter { $0.student.id == student.id }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label(student.name, systemImage: "person.crop.circle.fill")
-                    .font(.headline)
-                Spacer()
-                Text(student.mathLevel.displayName)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(MTTheme.secondaryInk)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(MTTheme.accentSoft, in: RoundedRectangle(cornerRadius: MTTheme.compactRadius, style: .continuous))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 26) {
+                patterns
+                history
             }
+            .padding(MTTheme.pagePadding)
+        }
+        .background(MTBackground())
+        .navigationTitle(student.name)
+    }
+
+    private var patterns: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Patterns")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(MTTheme.chalkboardGreen)
 
             if student.misconceptionCounts.isEmpty {
-                Text("No misconception history yet.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                Text("No patterns recorded")
+                    .foregroundStyle(MTTheme.secondaryInk)
             } else {
-                ForEach(student.topMisconceptions.prefix(3), id: \.self) { type in
+                ForEach(student.topMisconceptions, id: \.self) { type in
                     HStack {
                         Text(type.displayName)
-                            .font(.callout)
                         Spacer()
                         Text("\(student.misconceptionCounts[type, default: 0])")
-                            .font(.callout.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                            .fontWeight(.semibold)
                     }
+                    .padding(.vertical, 8)
+                    Divider()
                 }
             }
         }
-        .padding(14)
-        .background(MTTheme.notebookPaper.opacity(0.78), in: RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous))
+        .padding(18)
+        .background(MTTheme.notebookPaper)
         .overlay {
-            RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: MTTheme.cardRadius)
                 .stroke(MTTheme.gridLine, lineWidth: 1)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var history: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("History")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(MTTheme.chalkboardGreen)
+
+            if sessions.isEmpty {
+                Text("No completed sessions")
+                    .foregroundStyle(MTTheme.secondaryInk)
+            } else {
+                ForEach(sessions) { session in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(session.startedAt, style: .date)
+                            .font(.headline)
+                        HStack(spacing: 16) {
+                            Label("\(session.events.count)", systemImage: "viewfinder")
+                            Label("\(session.mistakeCount)", systemImage: "exclamationmark.triangle")
+                            Label("\(session.selfCorrectionCount)", systemImage: "checkmark")
+                        }
+                        .foregroundStyle(MTTheme.secondaryInk)
+                    }
+                    .padding(.vertical, 8)
+                    Divider()
+                }
+            }
+        }
+        .padding(18)
+        .background(MTTheme.notebookPaper)
+        .overlay {
+            RoundedRectangle(cornerRadius: MTTheme.cardRadius)
+                .stroke(MTTheme.gridLine, lineWidth: 1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

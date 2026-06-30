@@ -5,125 +5,120 @@ struct ReflectionView: View {
     let session: TutoringSession
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    MTGlassPanel(alignment: .leading) {
-                        VStack(alignment: .leading, spacing: 12) {
-                            MTStatusPill(title: "Session saved", symbol: "checkmark.seal.fill", tint: MTTheme.success)
-
-                            Text("Reflection")
-                                .font(.system(size: 52, weight: .semibold, design: .serif))
-                                .foregroundStyle(MTTheme.chalkboardGreen)
-                            Text("\(session.student.name) practiced with guidance that supported correction without giving away final answers.")
-                                .font(.title3)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 16)], spacing: 16) {
-                        MTMetricCard(title: "Checks", value: "\(session.events.count)", symbol: "viewfinder", tint: MTTheme.accent)
-                        MTMetricCard(title: "Mistakes", value: "\(session.mistakeCount)", symbol: "exclamationmark.triangle.fill", tint: MTTheme.warning)
-                        MTMetricCard(title: "Corrections", value: "\(session.selfCorrectionCount)", symbol: "checkmark.circle.fill", tint: MTTheme.success)
-                    }
-
-                    MTGlassPanel(alignment: .leading) {
-                        VStack(alignment: .leading, spacing: 16) {
-                            MTSectionHeader(
-                                title: "Student Reflection",
-                                subtitle: "A short close-out keeps the experience about learning instead of scorekeeping."
-                            )
-
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12)], spacing: 12) {
-                                MTInfoRow(
-                                    title: "What improved?",
-                                    detail: strongestPatternText,
-                                    symbol: "arrow.up.forward.circle.fill",
-                                    tint: MTTheme.success
-                                )
-                                MTInfoRow(
-                                    title: "What was hard?",
-                                    detail: hardestPatternText,
-                                    symbol: "exclamationmark.bubble.fill",
-                                    tint: MTTheme.warning
-                                )
-                            }
-                        }
-                    }
-
-                    MTGlassPanel(alignment: .leading) {
-                        VStack(alignment: .leading, spacing: 16) {
-                            MTSectionHeader(
-                                title: "Recent Tutor Moments",
-                                subtitle: "Each row shows the kind of hint the tutor used, not a solved answer."
-                            )
-
-                            if session.events.isEmpty {
-                                Text("No tutoring events were recorded in this session.")
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                ForEach(session.events.suffix(4)) { event in
-                                    ReflectionEventRow(event: event)
-                                }
-                            }
-                        }
-                    }
+        ScrollView {
+            VStack(spacing: 28) {
+                HStack(spacing: 16) {
+                    SessionCount(title: "Checks", value: session.events.count, symbol: "viewfinder")
+                    SessionCount(title: "Mistakes", value: session.mistakeCount, symbol: "exclamationmark.triangle")
+                    SessionCount(title: "Corrections", value: session.selfCorrectionCount, symbol: "checkmark")
                 }
-                .padding(MTTheme.pagePadding)
-            }
-            .background(MTBackground())
-            .navigationTitle("Reflection")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        appModel.returnHome()
-                    } label: {
-                        Label("Students", systemImage: "person.2.fill")
-                    }
+
+                if !session.events.isEmpty {
+                    SessionHistoryLog(events: session.events)
                 }
+
+                Button {
+                    appModel.returnHome()
+                } label: {
+                    Label("Home", systemImage: "house.fill")
+                        .frame(minWidth: 180)
+                }
+                .buttonStyle(MTLabeledControlButton(fill: MTTheme.chalkboardGreen, isFilled: true))
+                .accessibilityLabel("Return home")
             }
+            .frame(maxWidth: 760)
+            .padding(.vertical, 42)
         }
-    }
-
-    private var strongestPatternText: String {
-        if session.selfCorrectionCount > 0 {
-            "\(session.student.name) self-corrected \(session.selfCorrectionCount) step\(session.selfCorrectionCount == 1 ? "" : "s") after a hint."
-        } else {
-            "The next session can watch for a first self-correction moment."
-        }
-    }
-
-    private var hardestPatternText: String {
-        session.events.last?.observation.misconceptionType.displayName ?? "No misconception pattern was logged yet."
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(MTTheme.pagePadding)
+        .background(MTBackground())
     }
 }
 
-private struct ReflectionEventRow: View {
-    let event: TutorEvent
+private struct SessionHistoryLog: View {
+    let events: [TutorEvent]
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            Image(systemName: event.studentSelfCorrected ? "checkmark.circle.fill" : "lightbulb.fill")
-                .font(.title2)
-                .foregroundStyle(event.studentSelfCorrected ? MTTheme.success : MTTheme.accent)
-                .frame(width: 32)
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
+                VStack(alignment: .leading, spacing: 9) {
+                    HStack {
+                        Label("Check \(index + 1)", systemImage: event.observation.mistakeDetected ? "exclamationmark.triangle" : "checkmark")
+                            .font(.headline)
+                            .foregroundStyle(event.observation.mistakeDetected ? MTTheme.errorRust : MTTheme.labGreen)
+                        Spacer()
+                        Text(event.timestamp, style: .time)
+                            .font(.caption)
+                            .foregroundStyle(MTTheme.secondaryInk)
+                    }
 
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text(event.observation.misconceptionType.displayName)
-                        .font(.headline)
-                    Spacer()
-                    Text("Level \(event.observation.hintLevel)")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.secondary)
+                    Text("Mistake")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(MTTheme.secondaryInk)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(event.observation.mistakeDetected ? event.observation.misconceptionType.displayName : "No clear mistake")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(MTTheme.graphiteInk)
+
+                        if !event.observation.workSummary.isEmpty {
+                            TutorHintView(content: event.observation.workSummary)
+                        }
+                    }
+
+                    Text("Tutor guidance")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(MTTheme.secondaryInk)
+
+                    TutorHintView(content: event.tutorMessage ?? event.observation.hint)
+
+                    if event.studentSelfCorrected {
+                        Label("Corrected", systemImage: "checkmark.circle.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(MTTheme.labGreen)
+                    }
                 }
-                Text(event.observation.hint)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                .padding(16)
+
+                if index < events.count - 1 {
+                    Divider()
+                }
             }
-            .padding(.bottom, 12)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(MTTheme.notebookPaper)
+        .overlay {
+            RoundedRectangle(cornerRadius: MTTheme.cardRadius)
+                .stroke(MTTheme.gridLine, lineWidth: 1)
+        }
+        .accessibilityElement(children: .contain)
+    }
+}
+
+private struct SessionCount: View {
+    let title: String
+    let value: Int
+    let symbol: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.title2)
+                .foregroundStyle(MTTheme.labGreen)
+            Text("\(value)")
+                .font(.system(size: 46, weight: .semibold, design: .serif))
+                .foregroundStyle(MTTheme.deepBlackGreen)
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(MTTheme.graphiteInk)
+        }
+        .frame(width: 190, height: 170)
+        .background(MTTheme.notebookPaper)
+        .overlay {
+            RoundedRectangle(cornerRadius: MTTheme.cardRadius)
+                .stroke(MTTheme.gridLine, lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title): \(value)")
     }
 }

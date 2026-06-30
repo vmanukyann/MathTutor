@@ -6,11 +6,12 @@ struct StudentPickerView: View {
     @State private var selectedStudentID: StudentProfile.ID?
 
     private var selectedStudent: StudentProfile? {
-        if let selectedStudentID,
-           let student = appModel.students.first(where: { $0.id == selectedStudentID }) {
-            return student
-        }
-        return appModel.students.first
+        guard let selectedStudentID else { return nil }
+        return appModel.students.first(where: { $0.id == selectedStudentID })
+    }
+
+    private var canBeginSession: Bool {
+        selectedStudent != nil
     }
 
     var body: some View {
@@ -58,11 +59,10 @@ struct StudentPickerView: View {
                         } label: {
                             Image(systemName: "arrow.right")
                         }
-                        .buttonStyle(MTIconButton(tint: MTTheme.notebookPaper))
-                        .background(MTTheme.chalkboardGreen, in: RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous))
-                        .disabled(selectedStudent == nil)
-                        .opacity(selectedStudent == nil ? 0.45 : 1)
+                        .buttonStyle(StudentNextButtonStyle(isActive: canBeginSession))
+                        .disabled(!canBeginSession)
                         .accessibilityLabel("Begin session")
+                        .accessibilityHint(canBeginSession ? "Continue with the selected student" : "Select a student first")
                     }
 
                     Spacer(minLength: 28)
@@ -95,7 +95,7 @@ struct StudentPickerView: View {
                     .presentationDragIndicator(.visible)
             }
             .onAppear {
-                selectedStudentID = selectedStudent?.id
+                selectedStudentID = nil
             }
             .onChange(of: appModel.voiceRecognizer.commandEventID) { _, _ in
                 handleVoiceCommand()
@@ -193,6 +193,26 @@ private struct StudentNotebookRow: View {
             .map(String.init)
             .joined()
             .uppercased()
+    }
+}
+
+private struct StudentNextButtonStyle: ButtonStyle {
+    let isActive: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.title3.weight(.semibold))
+            .foregroundStyle(isActive ? MTTheme.notebookPaper : MTTheme.chalkboardGreen)
+            .frame(width: 48, height: 48)
+            .background(
+                isActive ? MTTheme.chalkboardGreen : MTTheme.notebookPaper.opacity(0.96),
+                in: RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous)
+                    .stroke(MTTheme.chalkboardGreen.opacity(isActive ? 0.24 : 0.82), lineWidth: isActive ? 1 : 1.4)
+            }
+            .opacity(configuration.isPressed ? 0.78 : (isActive ? 1 : 0.64))
     }
 }
 

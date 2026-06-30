@@ -7,13 +7,13 @@
 ![Branch](https://img.shields.io/badge/branch-JuneVersion-blue)
 ![Status](https://img.shields.io/badge/status-research%20prototype-green)
 
-MathTutor is an iPad-first research prototype for a real-time Socratic math tutor. The app watches a student solve math on paper, detects likely process mistakes, and gives short voice hints that guide the student without revealing the answer.
+MathTutor is an iPad-first research prototype for a real-time guided math tutor. The app watches a student solve math on paper, detects likely process mistakes, and gives short voice hints that guide the student without revealing the answer.
 
 The goal is not to build another scanner or answer engine. The goal is to build a tutor that behaves more like a patient teacher: quiet while the student thinks, attentive when the student gets stuck, and personal over time because it remembers each student's name, level, and recurring mistake patterns.
 
 ## One-Sentence Pitch
 
-MathTutor turns an iPad into a quiet, camera-based math coach that observes handwritten work, remembers student misconceptions, and gives Socratic voice hints only when they support learning.
+MathTutor turns an iPad into a quiet, camera-based math coach that observes handwritten work, remembers student misconceptions, and gives guided voice hints only when they support learning.
 
 ## Research Motivation
 
@@ -26,7 +26,7 @@ That is the main innovation of this version.
 | Typical solver app | MathTutor JuneVersion |
 | --- | --- |
 | Scans a completed problem | Watches the problem develop on paper |
-| Gives generated steps and often an answer | Gives short Socratic hints |
+| Gives generated steps and often an answer | Gives short tutor hints |
 | Treats each user the same | Tracks student-specific patterns |
 | Optimizes for completion | Optimizes for self-correction |
 | Uses a chat or answer panel as the main surface | Keeps the camera and paper as the main surface |
@@ -404,7 +404,7 @@ Content:
 
 Design:
 
-- Sparse research notebook.
+- Sparse student history.
 - More detailed than student-facing pages, but still not a business dashboard.
 - Uses quiet counts and table-like rows instead of large analytics panels.
 
@@ -724,7 +724,7 @@ Defined in `StudentProfile.swift`.
 | --- | --- |
 | Low | Avoid interrupting unless student asks |
 | Medium | Give a short hint if useful |
-| High | More likely to interrupt with a Socratic hint |
+| High | More likely to interrupt with a guided hint |
 
 ### Hint Levels
 
@@ -806,7 +806,7 @@ OPENAI_OBSERVE_MODEL
 
 The prompt instructs the model to:
 
-- Act as a Socratic math teacher.
+- Act as a guided math teacher.
 - Use the student's name and past misconception counts.
 - Analyze the newest visible step.
 - Avoid over-interrupting on low confidence.
@@ -1308,7 +1308,7 @@ Current branch goal:
 - OpenAI API through Supabase.
 - Camera-first observation.
 - Student memory.
-- Socratic voice hints.
+- Guided voice hints.
 - Math-only Teach Mode.
 - Admin Review.
 - Supabase logging.
