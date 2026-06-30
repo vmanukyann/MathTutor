@@ -2,7 +2,6 @@ import SwiftUI
 
 struct AdminReviewView: View {
     @EnvironmentObject private var appModel: AppModel
-    @State private var showingHolderSettings = false
 
     var body: some View {
         NavigationStack {
@@ -56,18 +55,6 @@ struct AdminReviewView: View {
                     }
                 }
 
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showingHolderSettings = true
-                    } label: {
-                        Label("Holder", systemImage: "ipad.and.arrow.forward")
-                    }
-                }
-            }
-            .sheet(isPresented: $showingHolderSettings) {
-                HolderSettingsView(standController: appModel.standController)
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
             }
         }
     }

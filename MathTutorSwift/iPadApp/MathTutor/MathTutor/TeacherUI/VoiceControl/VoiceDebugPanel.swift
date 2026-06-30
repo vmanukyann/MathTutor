@@ -11,6 +11,7 @@ struct VoiceDebugPanel: View {
         .resume,
         .askQuestion,
         .checkWork,
+        .hearingTest,
         .connectAirPlay,
         .displayOnScreen,
         .markCorrected,
@@ -29,6 +30,7 @@ struct VoiceDebugPanel: View {
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 12)], spacing: 12) {
                     debugRow("Permission", recognizer.snapshot.permissionStatus.displayName, "lock.shield")
+                    debugRow("Microphone", recognizer.snapshot.isMicrophoneAuthorized ? "Authorized" : "Not authorized", "mic")
                     debugRow("Listening", recognizer.snapshot.isListening ? "Yes" : "No", "mic")
                     debugRow("Mode", recognizer.snapshot.currentVoiceMode.displayName, "waveform")
                     debugRow("Command", recognizer.snapshot.lastRecognizedCommand?.displayName ?? "None", "command")

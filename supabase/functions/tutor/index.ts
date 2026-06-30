@@ -155,6 +155,11 @@ Hard rules:
 - Each teach_steps item must contain only raw display LaTeX without dollar signs or prose.
 - Prefer LaTeX commands such as \\frac{a}{b}, x^{2}, \\cdot, \\neq, and \\sqrt{x}; never use Unicode superscripts or slash fractions.
 - Because the response is JSON, escape every LaTeX backslash as a JSON double backslash. For example, return "\\\\frac{1}{2}", never "\\frac{1}{2}".
+- Every teach_steps line must be mathematically valid and arithmetically checked.
+- Never use placeholder words such as "something", "unknown", "answer", "value", or "placeholder" in teach_steps.
+- Never put prose or \\text{...} in teach_steps; use mathematical symbols and variables only.
+- Preserve branches correctly. For square roots, use \\pm and never combine two solutions with a comma.
+- In no-answer mode, stop at the most useful intermediate step before the final solved value.
 - If the work is correct or too unclear, say so without inventing a mistake.
 
 Return ONLY valid JSON with exactly these keys:

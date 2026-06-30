@@ -6,6 +6,7 @@ struct LaTeXMathView: UIViewRepresentable {
     var fontSize: CGFloat = 32
     var color: UIColor = UIColor(MTTheme.deepBlackGreen)
     var alignment: MTTextAlignment = .center
+    var isBold = false
 
     func makeUIView(context: Context) -> MTMathUILabel {
         let label = MTMathUILabel()
@@ -15,7 +16,8 @@ struct LaTeXMathView: UIViewRepresentable {
     }
 
     func updateUIView(_ label: MTMathUILabel, context: Context) {
-        label.latex = LaTeXNormalizer.expression(latex)
+        let expression = LaTeXNormalizer.expression(latex)
+        label.latex = isBold ? "\\mathbf{\(expression)}" : expression
         label.font = MTFontManager().font(withName: MathFont.latinModernFont.rawValue, size: fontSize)
         label.textColor = color
         label.textAlignment = alignment
@@ -33,7 +35,7 @@ struct LaTeXMathView: UIViewRepresentable {
         var intrinsic = uiView.intrinsicContentSize
         let proposedWidth = max(proposal.width ?? intrinsic.width, 1)
         if intrinsic.width > proposedWidth {
-            let fittedSize = max(18, fontSize * proposedWidth / intrinsic.width)
+            let fittedSize = max(12, fontSize * proposedWidth / intrinsic.width)
             uiView.font = MTFontManager().font(
                 withName: MathFont.latinModernFont.rawValue,
                 size: fittedSize
@@ -60,14 +62,52 @@ struct TutorHintView: View {
                         .foregroundStyle(MTTheme.ink)
                         .fixedSize(horizontal: false, vertical: true)
                 case .math(let latex):
-                    LaTeXMathView(latex: latex, fontSize: 25, alignment: .left)
+                    LaTeXMathView(latex: latex, fontSize: 21, alignment: .left)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(10)
+                        .background(MTTheme.notebookPaper)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: MTTheme.compactRadius)
+                                .stroke(MTTheme.gridLine, lineWidth: 1)
+                        }
                         .accessibilityLabel(latex)
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct MathStepCard: View {
+    let number: Int
+    let latex: String
+    var fontSize: CGFloat = 34
+    var isProminent = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Step \(number)")
+                .font(isProminent ? .title3.weight(.bold) : .caption.weight(.semibold))
+                .foregroundStyle(isProminent ? MTTheme.chalkboardGreen : MTTheme.labGreen)
+
+            LaTeXMathView(
+                latex: latex,
+                fontSize: fontSize,
+                isBold: isProminent
+            )
+                .frame(maxWidth: .infinity, minHeight: 54)
+                .accessibilityLabel("Step \(number): \(latex)")
+        }
+        .padding(isProminent ? 22 : 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(MTTheme.notebookPaper)
+        .overlay {
+            RoundedRectangle(cornerRadius: MTTheme.cardRadius)
+                .stroke(
+                    isProminent ? MTTheme.labGreen.opacity(0.72) : MTTheme.gridLine,
+                    lineWidth: isProminent ? 2 : 1
+                )
+        }
     }
 }
 

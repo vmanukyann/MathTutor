@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject private var appModel: AppModel
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ZStack {
@@ -22,7 +23,21 @@ struct RootView: View {
             }
         }
         .task {
-            await appModel.voiceRecognizer.startListening()
+            await appModel.voiceRecognizer.ensureListening()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .active:
+                Task {
+                    await appModel.voiceRecognizer.ensureListening()
+                }
+            case .background:
+                appModel.voiceRecognizer.stopListening()
+            case .inactive:
+                break
+            @unknown default:
+                break
+            }
         }
         .onChange(of: appModel.voiceRecognizer.commandEventID) { _, _ in
             guard appModel.voiceRecognizer.lastRecognizedCommand == .emergencyStop else { return }

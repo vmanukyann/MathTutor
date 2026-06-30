@@ -50,6 +50,7 @@ enum VoicePermissionStatus: Equatable, Sendable {
 struct VoiceControlSnapshot: Equatable, Sendable {
     var isListening = false
     var isAvailable = false
+    var isMicrophoneAuthorized = false
     var permissionStatus: VoicePermissionStatus = .notDetermined
     var lastTranscript = ""
     var lastRecognizedCommand: VoiceCommand?

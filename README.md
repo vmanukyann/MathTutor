@@ -884,12 +884,6 @@ Migration:
 supabase/migrations/20260608000000_june_teacher_schema.sql
 ```
 
-Fresh reset script:
-
-```text
-supabase/sql/reset_for_june_version.sql
-```
-
 Tables:
 
 ```mermaid
@@ -1150,8 +1144,6 @@ Safe hardware testing order:
 │   │   └── index.ts
 │   ├── migrations/
 │   │   └── 20260608000000_june_teacher_schema.sql
-│   └── sql/
-│       └── reset_for_june_version.sql
 └── README.md
 ```
 
@@ -1207,22 +1199,9 @@ xcodebuild \
   build
 ```
 
-## Fresh Database Setup
+## Database Setup
 
-Use this only if old Flutter-era data is no longer needed.
-
-1. Open Supabase.
-2. Export anything important from the old database.
-3. Open SQL Editor.
-4. Run:
-
-```text
-supabase/sql/reset_for_june_version.sql
-```
-
-This reset script removes old app tables and recreates the JuneVersion teacher schema.
-
-Then set secrets:
+Apply the tracked migration with `supabase db push`, then set secrets:
 
 ```bash
 supabase secrets set OPENAI_API_KEY=sk-...

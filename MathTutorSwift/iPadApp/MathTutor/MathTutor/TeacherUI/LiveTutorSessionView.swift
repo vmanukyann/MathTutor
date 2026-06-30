@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct LiveTutorSessionView: View {
     @EnvironmentObject private var appModel: AppModel
@@ -16,6 +17,7 @@ struct LiveTutorSessionView: View {
     @State private var errorMessage: String?
     @State private var checkFailure: CheckFailure?
     @State private var airPlayMessage: String?
+    @State private var showingScreenMirroringHelp = false
     @State private var studentConfused = false
     @State private var isTeachMode = false
     @State private var lastTeachModeRequest = Date.distantPast
@@ -42,7 +44,16 @@ struct LiveTutorSessionView: View {
             }
         }
         .task {
+            voice.onSpeechStarted = {
+                appModel.voiceRecognizer.stopListening()
+            }
+            voice.onSpeechFinished = {
+                Task {
+                    await appModel.voiceRecognizer.ensureListening()
+                }
+            }
             await camera.start()
+            await appModel.voiceRecognizer.ensureListening()
             standController.send(.observeMode)
         }
         .onChange(of: appModel.voiceRecognizer.commandEventID) { _, _ in
@@ -63,6 +74,11 @@ struct LiveTutorSessionView: View {
             voice.stop()
             standController.returnToObserve()
             appModel.clearExternalTeachMode()
+        }
+        .alert("Connect TV Display", isPresented: $showingScreenMirroringHelp) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Open Control Center, tap Screen Mirroring, then choose your TV. Return to MathTutor when the TV shows the notebook background.")
         }
     }
 
@@ -137,7 +153,10 @@ struct LiveTutorSessionView: View {
     private var topControlBar: some View {
         ZStack {
             HStack {
-                VoiceControlIndicator(snapshot: appModel.voiceRecognizer.snapshot)
+                VoiceControlIndicator(
+                    snapshot: appModel.voiceRecognizer.snapshot,
+                    onRestart: restartVoiceControl
+                )
                 Spacer()
                 endButton
             }
@@ -277,7 +296,8 @@ struct LiveTutorSessionView: View {
 
                 HStack(spacing: 8) {
                     ExternalDisplayRouteButton(
-                        isConnected: appModel.externalDisplay.isConnected
+                        isConnected: appModel.externalDisplay.isConnected,
+                        onShowInstructions: showScreenMirroringInstructions
                     )
 
                     #if targetEnvironment(simulator)
@@ -370,40 +390,52 @@ struct LiveTutorSessionView: View {
         ZStack {
             MTBackground()
 
-            VStack {
-                HStack {
-                    VoiceControlIndicator(snapshot: appModel.voiceRecognizer.snapshot)
+            if shouldShowScanAgain {
+                Text("SCAN AGAIN")
+                    .font(.system(size: 54, weight: .bold))
+                    .foregroundStyle(MTTheme.deepBlackGreen)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        returnToObserveMode()
+                    }
+                    .accessibilityLabel("Scan again. Tap to return to the camera.")
+            } else {
+                VStack {
+                    HStack {
+                        VoiceControlIndicator(
+                            snapshot: appModel.voiceRecognizer.snapshot,
+                            onRestart: restartVoiceControl
+                        )
+                        Spacer()
+                    }
+
                     Spacer()
-                }
 
-                Spacer()
-
-                ScrollView {
-                    VStack(spacing: 24) {
-                        ForEach(Array(teachModeLines.enumerated()), id: \.offset) { _, line in
-                            LaTeXMathView(latex: line, fontSize: 58)
-                                .frame(maxWidth: .infinity, minHeight: 82)
-                                .accessibilityLabel(line)
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            ForEach(Array(teachModeLines.enumerated()), id: \.offset) { index, line in
+                                MathStepCard(
+                                    number: index + 1,
+                                    latex: line,
+                                    fontSize: 32
+                                )
+                            }
                         }
+                        .padding(18)
                     }
-                    .padding(32)
-                    .background(MTTheme.notebookPaper)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: MTTheme.cardRadius)
-                            .stroke(MTTheme.gridLine, lineWidth: 1)
-                    }
+                    .padding(.horizontal, 34)
+                    .frame(maxWidth: 960, maxHeight: 560)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Math steps")
+
+                    Spacer()
+
+                    teachControlStrip
+                        .padding(.bottom, 24)
                 }
-                .padding(.horizontal, 34)
-                .frame(maxWidth: 960, maxHeight: 560)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Math steps")
-
-                Spacer()
-
-                teachControlStrip
-                    .padding(.bottom, 24)
+                .padding(MTTheme.pagePadding)
             }
-            .padding(MTTheme.pagePadding)
         }
         .onAppear {
             teachModeVariant = 0
@@ -541,8 +573,17 @@ struct LiveTutorSessionView: View {
     }
 
     private var teachModeLines: [String] {
+        if shouldShowScanAgain {
+            return ["SCAN AGAIN"]
+        }
+
         let sets = teachModeLineSets
         return sets[teachModeVariant % sets.count]
+    }
+
+    private var shouldShowScanAgain: Bool {
+        checkFailure == .couldNotRead
+            || latestObservation?.misconceptionType == .unclearWork
     }
 
     private var teachModeLineSets: [[String]] {
@@ -553,7 +594,7 @@ struct LiveTutorSessionView: View {
         if let backendSteps = latestObservation.teachSteps?
             .map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) })
             .filter({ !$0.isEmpty }),
-            !backendSteps.isEmpty {
+            areValidTeachSteps(backendSteps) {
             return [backendSteps]
         }
 
@@ -575,7 +616,7 @@ struct LiveTutorSessionView: View {
             ]
         case .slopeIntercept:
             return [
-                ["y = mx + b", "m = \\text{slope}", "b = \\text{start}"],
+                ["y = mx + b", "m = \\frac{\\Delta y}{\\Delta x}", "b = y - mx"],
                 ["y = 2x + 3", "m = 2", "b = 3"]
             ]
         case .factoring:
@@ -594,10 +635,27 @@ struct LiveTutorSessionView: View {
                 ["k(x + n)", "= kx + kn"]
             ]
         case .unclearWork:
-            return [
-                ["□", "↓", "□"],
-                ["□", "=", "□"]
-            ]
+            return [["SCAN AGAIN"]]
+        }
+    }
+
+    private func areValidTeachSteps(_ steps: [String]) -> Bool {
+        guard (2...5).contains(steps.count) else { return false }
+
+        let forbiddenTerms = [
+            "something",
+            "unknown",
+            "answer",
+            "placeholder",
+            "todo",
+            "\\text"
+        ]
+
+        return steps.allSatisfy { step in
+            let normalized = step.lowercased()
+            return !forbiddenTerms.contains(where: normalized.contains)
+                && !normalized.contains(",")
+                && !normalized.contains("...")
         }
     }
 
@@ -684,6 +742,9 @@ struct LiveTutorSessionView: View {
             handleVoiceQuestion()
         case .checkWork:
             Task { await checkWork() }
+        case .confirmHearing:
+            latestHint = "Yes, I can hear you."
+            voice.speak(latestHint)
         case .connectAirPlay:
             handleVoiceAirPlayRequest()
         case .displayOnScreen:
@@ -718,6 +779,15 @@ struct LiveTutorSessionView: View {
         }
         latestHint = airPlayMessage ?? latestHint
         voice.speak(latestHint)
+    }
+
+    private func showScreenMirroringInstructions() {
+        if appModel.externalDisplay.isConnected {
+            airPlayMessage = "TV display connected."
+        } else {
+            showingScreenMirroringHelp = true
+            airPlayMessage = "Use Screen Mirroring in Control Center to connect the TV."
+        }
     }
 
     private func displayCurrentTeaching() {
@@ -844,6 +914,20 @@ struct LiveTutorSessionView: View {
         session.endedAt = Date()
         appModel.clearExternalTeachMode()
         appModel.finishSession(session)
+    }
+
+    private func restartVoiceControl() {
+        if appModel.voiceRecognizer.snapshot.permissionStatus == .denied
+            || !appModel.voiceRecognizer.snapshot.isMicrophoneAuthorized {
+            if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(settingsURL)
+            }
+            return
+        }
+
+        Task {
+            await appModel.voiceRecognizer.startListening()
+        }
     }
 }
 

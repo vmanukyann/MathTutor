@@ -3,43 +3,41 @@ import SwiftUI
 
 struct ExternalDisplayRoutePicker: UIViewRepresentable {
     func makeUIView(context: Context) -> AVRoutePickerView {
-        let picker = NotifyingRoutePickerView()
+        let picker = FullSizeRoutePickerView()
         picker.prioritizesVideoDevices = true
         picker.tintColor = .clear
         picker.activeTintColor = .clear
         picker.backgroundColor = .clear
-        picker.accessibilityLabel = "Choose AirPlay display"
+        picker.accessibilityLabel = "Choose AirPlay TV"
         return picker
     }
 
-    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {
-        uiView.tintColor = .clear
-        uiView.activeTintColor = .clear
-        if let picker = uiView as? NotifyingRoutePickerView {
-            picker.prepareSystemButton()
-        }
+    func updateUIView(_ picker: AVRoutePickerView, context: Context) {
+        picker.tintColor = .clear
+        picker.activeTintColor = .clear
+        (picker as? FullSizeRoutePickerView)?.prepareSystemButton()
     }
 }
 
-private final class NotifyingRoutePickerView: AVRoutePickerView {
+private final class FullSizeRoutePickerView: AVRoutePickerView {
     override func layoutSubviews() {
         super.layoutSubviews()
         prepareSystemButton()
     }
 
     func prepareSystemButton() {
-        guard let button = systemRouteButton(in: self) else { return }
+        guard let button = routeButton(in: self) else { return }
         button.frame = bounds
-        button.accessibilityLabel = "Choose AirPlay display"
+        button.accessibilityLabel = "Choose AirPlay TV"
         button.accessibilityHint = "Shows Apple's AirPlay device list"
     }
 
-    private func systemRouteButton(in view: UIView) -> UIButton? {
+    private func routeButton(in view: UIView) -> UIButton? {
         if let button = view as? UIButton {
             return button
         }
         for subview in view.subviews {
-            if let button = systemRouteButton(in: subview) {
+            if let button = routeButton(in: subview) {
                 return button
             }
         }
@@ -49,45 +47,44 @@ private final class NotifyingRoutePickerView: AVRoutePickerView {
 
 struct ExternalDisplayRouteButton: View {
     var isConnected: Bool
-    var detail: String?
-
-    private var statusText: String {
-        if let detail {
-            return detail
-        }
-        return isConnected ? "TV connected" : "Choose TV"
-    }
+    var onShowInstructions: () -> Void
 
     var body: some View {
-        ZStack {
-            HStack(spacing: 8) {
-                Image(systemName: isConnected ? "airplayvideo.circle.fill" : "airplayvideo")
-                    .font(.title3.weight(.semibold))
-                    .accessibilityHidden(true)
+        HStack(spacing: 4) {
+            ZStack {
+                HStack(spacing: 7) {
+                    Image(systemName: isConnected ? "airplayvideo.circle.fill" : "airplayvideo")
+                        .font(.title3.weight(.semibold))
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("AirPlay")
-                        .font(.callout.weight(.semibold))
-                    Text(statusText)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(isConnected ? MTTheme.labGreen : MTTheme.secondaryInk)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("AirPlay")
+                            .font(.callout.weight(.semibold))
+                        Text(isConnected ? "TV connected" : "Choose TV")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(isConnected ? MTTheme.labGreen : MTTheme.secondaryInk)
+                    }
                 }
-            }
-            .allowsHitTesting(false)
-
-            ExternalDisplayRoutePicker()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .foregroundStyle(isConnected ? MTTheme.labGreen : MTTheme.graphiteInk)
-        .frame(width: 138, height: 52)
-        .background(MTTheme.notebookPaper, in: RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous)
-                .stroke(isConnected ? MTTheme.labGreen : MTTheme.gridLine, lineWidth: 1)
+                .foregroundStyle(isConnected ? MTTheme.labGreen : MTTheme.graphiteInk)
                 .allowsHitTesting(false)
+
+                ExternalDisplayRoutePicker()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .frame(width: 120, height: 52)
+            .background(MTTheme.notebookPaper, in: RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous)
+                    .stroke(isConnected ? MTTheme.labGreen : MTTheme.gridLine, lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+
+            Button(action: onShowInstructions) {
+                Image(systemName: "info.circle")
+                    .frame(width: 36, height: 52)
+            }
+            .buttonStyle(MTIconButton(tint: MTTheme.graphiteInk))
+            .accessibilityLabel("TV display instructions")
         }
-        .accessibilityLabel(isConnected ? "AirPlay display connected" : "Choose AirPlay display")
-        .accessibilityHint("Shows Apple's AirPlay device list")
     }
 }
 

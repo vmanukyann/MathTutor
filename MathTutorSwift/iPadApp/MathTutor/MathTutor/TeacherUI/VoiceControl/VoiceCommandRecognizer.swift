@@ -37,13 +37,17 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
             }
         }
 
-        await requestMicrophonePermissionIfNeeded()
+        let microphoneAuthorized = await requestMicrophonePermissionIfNeeded()
 
         snapshot.permissionStatus = VoicePermissionStatus(speechStatus: SFSpeechRecognizer.authorizationStatus())
+        snapshot.isMicrophoneAuthorized = microphoneAuthorized
         snapshot.isAvailable = speechRecognizer?.isAvailable ?? false
-        if snapshot.permissionStatus != .authorized {
+        if snapshot.permissionStatus != .authorized || !microphoneAuthorized {
             snapshot.currentVoiceMode = .disabled
             snapshot.isListening = false
+            snapshot.lastError = microphoneAuthorized
+                ? "Speech recognition is not authorized."
+                : "Microphone access is not authorized."
         }
     }
 
@@ -51,6 +55,11 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
         await requestPermissionsIfNeeded()
         guard snapshot.permissionStatus == .authorized else {
             snapshot.lastError = "Speech recognition is not authorized."
+            snapshot.currentVoiceMode = .disabled
+            return
+        }
+        guard snapshot.isMicrophoneAuthorized else {
+            snapshot.lastError = "Microphone access is not authorized. Enable it in Settings."
             snapshot.currentVoiceMode = .disabled
             return
         }
@@ -62,6 +71,11 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
 
         shouldKeepListening = true
         startRecognitionSession()
+    }
+
+    func ensureListening() async {
+        guard !snapshot.isListening else { return }
+        await startListening()
     }
 
     func stopListening() {
@@ -89,13 +103,13 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
         snapshot.routedAction = action
     }
 
-    private func requestMicrophonePermissionIfNeeded() async {
+    private func requestMicrophonePermissionIfNeeded() async -> Bool {
         if #available(iOS 17.0, *) {
-            _ = await AVAudioApplication.requestRecordPermission()
+            return await AVAudioApplication.requestRecordPermission()
         } else {
-            await withCheckedContinuation { continuation in
-                AVAudioSession.sharedInstance().requestRecordPermission { _ in
-                    continuation.resume()
+            return await withCheckedContinuation { continuation in
+                AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                    continuation.resume(returning: granted)
                 }
             }
         }
@@ -109,10 +123,9 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
             try audioSession.setCategory(
                 .playAndRecord,
                 mode: .measurement,
-                options: [.defaultToSpeaker, .allowBluetoothHFP, .duckOthers]
+                options: [.defaultToSpeaker, .allowBluetoothHFP]
             )
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-            try audioSession.overrideOutputAudioPort(.speaker)
         } catch {
             snapshot.lastError = error.localizedDescription
             snapshot.currentVoiceMode = .disabled
@@ -122,8 +135,17 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         if #available(iOS 13.0, *) {
-            request.requiresOnDeviceRecognition = false
+            request.requiresOnDeviceRecognition = speechRecognizer?.supportsOnDeviceRecognition == true
         }
+        request.contextualStrings = [
+            "can you hear me",
+            "check my work",
+            "display this on the screen",
+            "show me how to do this",
+            "repeat this",
+            "mark fixed",
+            "end session"
+        ]
         recognitionRequest = request
 
         let inputNode = audioEngine.inputNode
@@ -153,6 +175,7 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
         snapshot.isListening = true
         snapshot.isAvailable = speechRecognizer?.isAvailable ?? false
         snapshot.currentVoiceMode = .listening
+        snapshot.lastTranscript = ""
         snapshot.lastError = nil
 
         recognitionTask = speechRecognizer?.recognitionTask(with: request) { [weak self] result, error in

@@ -9,6 +9,7 @@ enum VoiceCommand: String, CaseIterable, Identifiable, Sendable {
     case differentWay
     case askQuestion
     case checkWork
+    case hearingTest
     case connectAirPlay
     case displayOnScreen
     case markCorrected
@@ -31,6 +32,7 @@ enum VoiceCommand: String, CaseIterable, Identifiable, Sendable {
         case .differentWay: "Different way"
         case .askQuestion: "Question"
         case .checkWork: "Check work"
+        case .hearingTest: "Hearing test"
         case .connectAirPlay: "Connect AirPlay"
         case .displayOnScreen: "Display on screen"
         case .markCorrected: "Mark corrected"
@@ -53,6 +55,7 @@ enum VoiceCommand: String, CaseIterable, Identifiable, Sendable {
         case .differentWay: "arrow.triangle.2.circlepath"
         case .askQuestion: "questionmark"
         case .checkWork: "viewfinder"
+        case .hearingTest: "ear"
         case .connectAirPlay: "airplayvideo"
         case .displayOnScreen: "rectangle.on.rectangle"
         case .markCorrected: "checkmark.circle"
@@ -84,6 +87,8 @@ enum VoiceCommandParser {
             command = .pause
         } else if containsAny(normalized, emergencyStopPhrases) {
             command = .emergencyStop
+        } else if containsAny(normalized, hearingTestPhrases) {
+            command = .hearingTest
         } else if containsAny(normalized, checkWorkPhrases) {
             command = .checkWork
         } else if containsAny(normalized, displayPhrases) {
@@ -216,6 +221,14 @@ enum VoiceCommandParser {
         "am i right",
         "scan my work",
         "check the problem"
+    ]
+
+    private static let hearingTestPhrases = [
+        "can you hear me",
+        "do you hear me",
+        "are you listening",
+        "can the app hear me",
+        "microphone test"
     ]
 
     private static let airPlayPhrases = [

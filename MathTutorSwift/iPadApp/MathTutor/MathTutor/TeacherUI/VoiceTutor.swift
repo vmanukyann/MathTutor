@@ -4,8 +4,18 @@ import Combine
 @MainActor
 final class VoiceTutor: NSObject, ObservableObject {
     private let synthesizer = AVSpeechSynthesizer()
+    private var currentUtterance: AVSpeechUtterance?
+
+    var onSpeechStarted: (() -> Void)?
+    var onSpeechFinished: (() -> Void)?
+
+    override init() {
+        super.init()
+        synthesizer.delegate = self
+    }
 
     func speak(_ text: String) {
+        onSpeechStarted?()
         let audioSession = AVAudioSession.sharedInstance()
         do {
             try audioSession.setCategory(
@@ -24,6 +34,7 @@ final class VoiceTutor: NSObject, ObservableObject {
         utterance.rate = 0.46
         utterance.pitchMultiplier = 1.02
         utterance.volume = 1.0
+        currentUtterance = utterance
         synthesizer.speak(utterance)
     }
 
@@ -61,5 +72,29 @@ final class VoiceTutor: NSObject, ObservableObject {
             range: NSRange(source.startIndex..<source.endIndex, in: source),
             withTemplate: template
         )
+    }
+}
+
+extension VoiceTutor: AVSpeechSynthesizerDelegate {
+    nonisolated func speechSynthesizer(
+        _ synthesizer: AVSpeechSynthesizer,
+        didFinish utterance: AVSpeechUtterance
+    ) {
+        Task { @MainActor [weak self] in
+            guard let self, utterance === currentUtterance else { return }
+            currentUtterance = nil
+            onSpeechFinished?()
+        }
+    }
+
+    nonisolated func speechSynthesizer(
+        _ synthesizer: AVSpeechSynthesizer,
+        didCancel utterance: AVSpeechUtterance
+    ) {
+        Task { @MainActor [weak self] in
+            guard let self, utterance === currentUtterance else { return }
+            currentUtterance = nil
+            onSpeechFinished?()
+        }
     }
 }
