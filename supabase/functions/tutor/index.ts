@@ -75,7 +75,7 @@ const OBSERVATION_SCHEMA = {
         "unclear_work",
       ],
     },
-    hint_level: { type: "integer", enum: [1, 2, 3, 4] },
+    hint_level: { type: "integer", enum: [1, 2, 3] },
     hint: { type: "string" },
     teacher_note: { type: "string" },
     work_summary: { type: "string" },
@@ -225,35 +225,7 @@ function isValidMathOnlyStep(step: string): boolean {
   return !hasFalseNumericEquality(normalized);
 }
 
-function canonicalHint(
-  misconception: TutorObservation["misconception_type"],
-  mistakeDetected: boolean,
-): string {
-  if (!mistakeDetected) return "Check the newest line once more, then continue.";
-
-  switch (misconception) {
-    case "sign_error":
-      return "Check the sign that changed between the last two lines.";
-    case "distribution":
-      return "Check whether the outside factor reached every term inside the parentheses.";
-    case "equation_balance":
-      return "Check whether the same operation was applied to both sides.";
-    case "invalid_cancellation":
-      return "Check whether the factor you canceled multiplies the entire numerator and denominator.";
-    case "slope_intercept":
-      return "Check which quantity represents the rate of change and which represents the starting point.";
-    case "factoring":
-      return "Check both the product and the sum of the factors.";
-    case "square_root":
-      return "Check the square root and preserve both sign branches.";
-    case "sat_strategy":
-      return "Check whether a shorter equivalent form preserves the original equation.";
-    case "unclear_work":
-      return "Scan again.";
-  }
-}
-
-function normalizeObservation(value: unknown, hasStudentQuestion = false): TutorObservation {
+function normalizeObservation(value: unknown): TutorObservation {
   if (!value || typeof value !== "object") {
     throw new Error("Observation response is not a JSON object.");
   }
@@ -282,7 +254,7 @@ function normalizeObservation(value: unknown, hasStudentQuestion = false): Tutor
       .filter((step): step is string => typeof step === "string" && step.trim().length > 0)
       .map((step) => step.trim())
       .filter(isValidMathOnlyStep)
-      .slice(0, 5)
+      .slice(0, 3)
     : undefined;
   const mistakeDetected = typeof row.mistake_detected === "boolean"
     ? row.mistake_detected
@@ -297,10 +269,12 @@ function normalizeObservation(value: unknown, hasStudentQuestion = false): Tutor
     mistake_detected: mistakeDetected,
     confidence,
     misconception_type: misconceptionType,
-    hint_level: Math.min(4, Math.max(1, Number(row.hint_level ?? 1))),
-    hint: hasStudentQuestion && typeof row.hint === "string" && row.hint.trim().length > 0
+    hint_level: Math.min(3, Math.max(1, Number(row.hint_level ?? 1))),
+    hint: typeof row.hint === "string" && row.hint.trim().length > 0
       ? row.hint.trim()
-      : canonicalHint(misconceptionType, mistakeDetected),
+      : mistakeDetected
+      ? "Compare the first incorrect line with the line immediately before it."
+      : "The newest visible step looks consistent. Continue from there.",
     teacher_note: typeof row.teacher_note === "string" ? row.teacher_note.trim() : "",
     work_summary: typeof row.work_summary === "string" ? row.work_summary.trim() : "",
     teach_steps: teachSteps && teachSteps.length > 0 ? teachSteps : undefined,
@@ -347,15 +321,18 @@ Student context:
 - No-answer mode: ${noAnswerMode ? "enabled" : "disabled"}
 ${studentQuestion ? `- Student's spoken question: ${JSON.stringify(studentQuestion)}` : ""}
 
-Analyze the newest visible step in the image. Detect likely reasoning mistakes, but do not over-interrupt if confidence is low. Use the student's past mistakes to personalize the hint when relevant.
+Analyze the visible work as one problem. Find the first incorrect transition, but do not over-interrupt if confidence is low. Use the student's past mistakes only when they match evidence in this image.
 ${studentQuestion ? "Answer the student's spoken question about the visible work with one concise guided hint. Do not ignore the question." : ""}
 
 Hard rules:
 - Never reveal the final answer.
 - Never solve the full problem.
-- Give one short teacher-like hint or clarifying question.
-- Provide 2 to 5 short math-only teach_steps that can be shown on a classroom display.
-- teach_steps should match the student's visible work or misconception.
+- Give one short, specific teacher-like hint or clarifying question about the first incorrect transition.
+- Name the exact visible numbers, symbols, or operation involved; do not give a generic topic reminder.
+- Provide at most 3 short math-only teach_steps that can be shown on a classroom display.
+- Start teach_steps at the mistaken line (or the line immediately before it), not at the beginning of the problem.
+- Copy the variables and numbers visible in the student's work. Never substitute a canned example or generic variables.
+- teach_steps must directly correct the visible mistake.
 - teach_steps should not dump a full final answer unless the visible step already contains it.
 - Write every mathematical expression in valid LaTeX.
 - In hint prose, wrap each math expression in \\( and \\), for example: "Compare \\(2(x+3)\\) with \\(2x+3\\)."
@@ -368,7 +345,8 @@ Hard rules:
 - Use one canonical derivation. Given the same visible work, return the same misconception, hint level, and teach_steps every time.
 - Use consistent operator spacing and canonical forms: \\frac{a}{b}, \\sqrt{x}, x^{2}, a \\cdot b, and \\pm.
 - Preserve branches correctly. For square roots, use \\pm and never combine two solutions with a comma.
-- Classify an incorrect square root, missing \\pm, or wrong root magnitude as "square_root".
+- Use "square_root" only when a square, radical, root operation, or missing \\pm is actually visible.
+- Never mention a square root, sign error, distribution, or any other topic unless that feature is visible in this image.
 - In no-answer mode, stop at the most useful intermediate step before the final solved value.
 - If the work is correct or too unclear, say so without inventing a mistake.
 
@@ -377,7 +355,7 @@ Return only the requested structured object. When the image is unclear, use misc
   "mistake_detected": boolean,
   "confidence": "low" | "medium" | "high",
   "misconception_type": "sign_error" | "distribution" | "equation_balance" | "invalid_cancellation" | "slope_intercept" | "factoring" | "square_root" | "sat_strategy" | "unclear_work",
-  "hint_level": 1 | 2 | 3 | 4,
+  "hint_level": 1 | 2 | 3,
   "hint": "one short guided hint without the final answer",
   "teacher_note": "brief private note for admin/research review",
   "work_summary": "brief summary of what the student appears to be doing",
@@ -573,12 +551,7 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "Observation response content was empty." }, 500);
     }
 
-    const hasStudentQuestion = typeof (session as any)?.student_question === "string"
-      && (session as any).student_question.trim().length > 0;
-    const observation = normalizeObservation(
-      JSON.parse(stripCodeFences(rawText)),
-      hasStudentQuestion,
-    );
+    const observation = normalizeObservation(JSON.parse(stripCodeFences(rawText)));
     return jsonResponse(observation);
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {

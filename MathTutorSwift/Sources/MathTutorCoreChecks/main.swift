@@ -16,6 +16,17 @@ let observation = TutorObservation(
 )
 assert(policy.shouldInterrupt(for: observation))
 
+let cappedObservation = TutorObservation(
+    mistakeDetected: true,
+    confidence: .high,
+    misconceptionType: .distribution,
+    hintLevel: 4,
+    hint: "Compare the two visible terms.",
+    teacherNote: "",
+    workSummary: ""
+)
+assert(cappedObservation.hintLevel == 3)
+
 var student = StudentProfile(name: "Aarav", mathLevel: .algebraTwo)
 student.record(.distribution)
 student.record(.distribution)

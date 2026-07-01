@@ -97,8 +97,8 @@ Supported command groups:
 | Teach / show | "Show me", "Help me", "Teach me", "I'm stuck" |
 | Step control | "Next", "Repeat", "Different way", "Slower" |
 | Question | "Question", "I have a question", "Wait", "Hold on" |
-| Pause / resume | "Pause", "Stop listening", "Resume", "Keep going" |
-| Emergency | "Stop", "Emergency stop", "Freeze", "Stop moving" |
+| Pause / resume | "Pause", "Pause it", "Stop", "Stop talking", "Resume", "Keep going" |
+| Emergency | "Emergency stop", "Stop moving", "Stop the holder" |
 | Confirmation | "I understand", "Got it", "That makes sense", "Continue" |
 
 Voice routing is context-aware. For example, "start" only starts from a ready state, "show me" only enters Teach Mode during a live session, "next" only changes the math display in Teach Mode, and emergency stop is routed to the holder immediately when holder controls are active.
@@ -655,14 +655,13 @@ Defined in `StudentProfile.swift`.
 
 ### Hint Levels
 
-The backend returns a hint level from 1 to 4.
+The backend returns one of three hint levels.
 
 | Level | Meaning |
 | --- | --- |
 | 1 | Very light nudge |
 | 2 | More specific place to inspect |
 | 3 | Stronger conceptual cue |
-| 4 | Highest support allowed without giving the answer |
 
 ## Backend Architecture
 
@@ -1174,6 +1173,9 @@ Expected tutoring behavior:
 
 - The tutor does not reveal final answers.
 - The tutor gives one short hint at a time.
+- Hints use at most three levels, and Teach Mode shows at most three steps beginning at the student's mistaken line.
+- Teach Mode never substitutes canned example math when grounded AI steps are unavailable.
+- While the tutor is speaking, voice recognition ignores its speech but still accepts pause and emergency-stop commands.
 - The tutor does not interrupt aggressively on low confidence.
 - Student memory changes future hint context.
 - Teach Mode shows math steps only.

@@ -12,7 +12,8 @@ struct RootView: View {
             case .liveSession(let student):
                 LiveTutorSessionView(
                     student: student,
-                    standController: appModel.standController
+                    standController: appModel.standController,
+                    voiceRecognizer: appModel.voiceRecognizer
                 )
             case .reflection(let session):
                 ReflectionView(session: session)

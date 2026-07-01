@@ -57,7 +57,7 @@ public struct TutorObservation: Codable, Equatable, Sendable {
         self.mistakeDetected = mistakeDetected
         self.confidence = confidence
         self.misconceptionType = misconceptionType
-        self.hintLevel = min(4, max(1, hintLevel))
+        self.hintLevel = min(3, max(1, hintLevel))
         self.hint = hint
         self.teacherNote = teacherNote
         self.workSummary = workSummary

@@ -5,6 +5,7 @@ import Combine
 final class VoiceTutor: NSObject, ObservableObject {
     private let synthesizer = AVSpeechSynthesizer()
     private var currentUtterance: AVSpeechUtterance?
+    private var currentSpokenText = ""
 
     var onSpeechStarted: (() -> Void)?
     var onSpeechFinished: (() -> Void)?
@@ -15,6 +16,10 @@ final class VoiceTutor: NSObject, ObservableObject {
     }
 
     func speak(_ text: String) {
+        let preparedText = spokenText(from: text)
+        guard !preparedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard !(synthesizer.isSpeaking && preparedText == currentSpokenText) else { return }
+
         onSpeechStarted?()
         let audioSession = AVAudioSession.sharedInstance()
         do {
@@ -30,11 +35,12 @@ final class VoiceTutor: NSObject, ObservableObject {
         }
 
         synthesizer.stopSpeaking(at: .immediate)
-        let utterance = AVSpeechUtterance(string: spokenText(from: text))
+        let utterance = AVSpeechUtterance(string: preparedText)
         utterance.rate = 0.46
         utterance.pitchMultiplier = 1.02
         utterance.volume = 1.0
         currentUtterance = utterance
+        currentSpokenText = preparedText
         synthesizer.speak(utterance)
     }
 
@@ -83,6 +89,7 @@ extension VoiceTutor: AVSpeechSynthesizerDelegate {
         Task { @MainActor [weak self] in
             guard let self, utterance === currentUtterance else { return }
             currentUtterance = nil
+            currentSpokenText = ""
             onSpeechFinished?()
         }
     }
@@ -94,6 +101,7 @@ extension VoiceTutor: AVSpeechSynthesizerDelegate {
         Task { @MainActor [weak self] in
             guard let self, utterance === currentUtterance else { return }
             currentUtterance = nil
+            currentSpokenText = ""
             onSpeechFinished?()
         }
     }

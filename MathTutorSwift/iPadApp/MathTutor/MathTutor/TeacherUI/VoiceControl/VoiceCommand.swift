@@ -87,9 +87,7 @@ enum VoiceCommandParser {
         guard !normalized.isEmpty else { return nil }
 
         let command: VoiceCommand
-        if normalized == "stop listening" {
-            command = .pause
-        } else if containsAny(normalized, emergencyStopPhrases) {
+        if containsAny(normalized, emergencyStopPhrases) {
             command = .emergencyStop
         } else if containsAny(normalized, hearingTestPhrases) {
             command = .hearingTest
@@ -306,7 +304,12 @@ enum VoiceCommandParser {
 
     private static let pausePhrases = [
         "pause",
-        "stop listening"
+        "pause it",
+        "stop",
+        "stop talking",
+        "stop explaining",
+        "stop listening",
+        "be quiet"
     ]
 
     private static let resumePhrases = [
@@ -315,10 +318,9 @@ enum VoiceCommandParser {
     ]
 
     private static let emergencyStopPhrases = [
-        "stop",
         "emergency stop",
-        "freeze",
-        "stop moving"
+        "stop moving",
+        "stop the holder"
     ]
 
     private static let confirmationPhrases = [
