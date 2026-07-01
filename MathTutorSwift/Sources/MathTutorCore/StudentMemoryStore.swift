@@ -5,6 +5,7 @@ public protocol StudentMemoryStoring: Sendable {
     func saveStudents(_ students: [StudentProfile]) throws
     func loadSessions() throws -> [TutoringSession]
     func saveSession(_ session: TutoringSession) throws
+    func saveSessions(_ sessions: [TutoringSession]) throws
 }
 
 public final class FileStudentMemoryStore: StudentMemoryStoring, @unchecked Sendable {
@@ -57,6 +58,13 @@ public final class FileStudentMemoryStore: StudentMemoryStoring, @unchecked Send
         try ensureDirectory()
         var sessions = try loadSessions()
         sessions.insert(session, at: 0)
+        let url = directory.appendingPathComponent("sessions.json")
+        let data = try encoder.encode(Array(sessions.prefix(100)))
+        try data.write(to: url, options: [.atomic])
+    }
+
+    public func saveSessions(_ sessions: [TutoringSession]) throws {
+        try ensureDirectory()
         let url = directory.appendingPathComponent("sessions.json")
         let data = try encoder.encode(Array(sessions.prefix(100)))
         try data.write(to: url, options: [.atomic])

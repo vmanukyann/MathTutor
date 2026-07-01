@@ -2,7 +2,6 @@ import Foundation
 
 enum VoiceRouteLocation: Sendable {
     case studentPicker
-    case consent
     case liveSession
     case teachMode
     case reflection
@@ -69,7 +68,7 @@ struct VoiceCommandRouter: Sendable {
         switch command {
         case .startSession:
             switch context.location {
-            case .studentPicker, .consent:
+            case .studentPicker:
                 return .startSession
             default:
                 return .ignore("start is only valid before a session")

@@ -134,9 +134,12 @@ enum LaTeXNormalizer {
         }
 
         result = result
+            .replacingOccurrences(of: "−", with: "-")
+            .replacingOccurrences(of: "–", with: "-")
+            .replacingOccurrences(of: "+/-", with: "\\pm ")
             .replacingOccurrences(of: #"(?<!\\)\b(frac|sqrt|text|cdot|times|div|neq|leq|geq|left|right|begin|end)(?=[\{\s])"#, with: #"\\$1"#, options: .regularExpression)
 
-        return result
+        result = result
             .replacingOccurrences(of: "≠", with: "\\neq ")
             .replacingOccurrences(of: "≤", with: "\\leq ")
             .replacingOccurrences(of: "≥", with: "\\geq ")
@@ -148,6 +151,81 @@ enum LaTeXNormalizer {
             .replacingOccurrences(of: "→", with: "\\to ")
             .replacingOccurrences(of: "↓", with: "\\downarrow ")
             .replacingOccurrences(of: "□", with: "\\square ")
+
+        result = result
+            .replacingOccurrences(
+                of: #"(?<![\\\w}])([A-Za-z0-9]+)\s*/\s*([A-Za-z0-9]+)(?![\w{])"#,
+                with: #"\\frac{$1}{$2}"#,
+                options: .regularExpression
+            )
+            .replacingOccurrences(
+                of: #"\^([A-Za-z0-9])(?![A-Za-z0-9}])"#,
+                with: #"^{$1}"#,
+                options: .regularExpression
+            )
+            .replacingOccurrences(of: #"\s*=\s*"#, with: " = ", options: .regularExpression)
+            .replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
+
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func isMathOnlyExpression(_ source: String) -> Bool {
+        let normalized = expression(source)
+        let forbiddenWords = [
+            "something",
+            "unknown",
+            "answer",
+            "value",
+            "placeholder",
+            "undefined",
+            "variable",
+            "number",
+            "term",
+            "solution",
+            "result"
+        ]
+
+        let lowercased = normalized.lowercased()
+        guard !forbiddenWords.contains(where: {
+            lowercased.range(of: "\\b\($0)\\b", options: .regularExpression) != nil
+        }) else {
+            return false
+        }
+
+        guard !lowercased.contains("\\text"),
+              !lowercased.contains("\\mathrm"),
+              !lowercased.contains("\\operatorname"),
+              !normalized.contains("..."),
+              !normalized.contains(","),
+              normalized.range(
+                of: #"^\s*[A-Za-z]\s*=\s*(?![A-Za-z](?:\s|$))"#,
+                options: .regularExpression
+              ) == nil,
+              bracesAreBalanced(in: normalized) else {
+            return false
+        }
+
+        let withoutCommands = normalized.replacingOccurrences(
+            of: #"\\[A-Za-z]+"#,
+            with: "",
+            options: .regularExpression
+        )
+        return withoutCommands.range(of: #"[A-Za-z]{2,}"#, options: .regularExpression) == nil
+    }
+
+    private static func bracesAreBalanced(in source: String) -> Bool {
+        var depth = 0
+        for character in source {
+            if character == "{" {
+                depth += 1
+            } else if character == "}" {
+                depth -= 1
+                if depth < 0 {
+                    return false
+                }
+            }
+        }
+        return depth == 0
     }
 
     private static func repairJSONEscapes(in source: String) -> String {

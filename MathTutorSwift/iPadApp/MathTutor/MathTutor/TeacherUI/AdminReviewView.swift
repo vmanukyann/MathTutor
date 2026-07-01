@@ -122,16 +122,31 @@ private struct AdminStudentDetailView: View {
                     .foregroundStyle(MTTheme.secondaryInk)
             } else {
                 ForEach(sessions) { session in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(session.startedAt, style: .date)
-                            .font(.headline)
-                        HStack(spacing: 16) {
-                            Label("\(session.events.count)", systemImage: "viewfinder")
-                            Label("\(session.mistakeCount)", systemImage: "exclamationmark.triangle")
-                            Label("\(session.selfCorrectionCount)", systemImage: "checkmark")
+                    NavigationLink {
+                        AdminSessionDetailView(session: session)
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(session.startedAt, style: .date)
+                                    .font(.headline)
+                                HStack(spacing: 16) {
+                                    Label("\(session.events.count)", systemImage: "viewfinder")
+                                    Label("\(session.mistakeCount)", systemImage: "exclamationmark.triangle")
+                                    Label("\(session.selfCorrectionCount)", systemImage: "checkmark")
+                                }
+                                .foregroundStyle(MTTheme.secondaryInk)
+                            }
+
+                            Spacer()
+
+                            Image(systemName: "chevron.right")
+                                .foregroundStyle(MTTheme.secondaryInk)
                         }
-                        .foregroundStyle(MTTheme.secondaryInk)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(MTTheme.graphiteInk)
+                    .accessibilityLabel("Open session from \(session.startedAt.formatted(date: .abbreviated, time: .omitted))")
                     .padding(.vertical, 8)
                     Divider()
                 }
@@ -144,5 +159,31 @@ private struct AdminStudentDetailView: View {
                 .stroke(MTTheme.gridLine, lineWidth: 1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct AdminSessionDetailView: View {
+    let session: TutoringSession
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 28) {
+                HStack(spacing: 16) {
+                    SessionCount(title: "Checks", value: session.events.count, symbol: "viewfinder")
+                    SessionCount(title: "Mistakes", value: session.mistakeCount, symbol: "exclamationmark.triangle")
+                    SessionCount(title: "Corrections", value: session.selfCorrectionCount, symbol: "checkmark")
+                }
+
+                if !session.events.isEmpty {
+                    SessionHistoryLog(events: session.events)
+                }
+            }
+            .frame(maxWidth: 760)
+            .padding(.vertical, 42)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(MTTheme.pagePadding)
+        .background(MTBackground())
+        .navigationTitle(session.startedAt.formatted(date: .abbreviated, time: .shortened))
     }
 }

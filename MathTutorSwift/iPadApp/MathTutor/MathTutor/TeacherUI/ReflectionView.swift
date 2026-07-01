@@ -35,7 +35,7 @@ struct ReflectionView: View {
     }
 }
 
-private struct SessionHistoryLog: View {
+struct SessionHistoryLog: View {
     let events: [TutorEvent]
 
     var body: some View {
@@ -95,7 +95,7 @@ private struct SessionHistoryLog: View {
     }
 }
 
-private struct SessionCount: View {
+struct SessionCount: View {
     let title: String
     let value: Int
     let symbol: String

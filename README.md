@@ -54,8 +54,7 @@ MathTutor V1 is API-first and iPad-only.
 
 ```mermaid
 flowchart LR
-    A["Student chooses profile"] --> B["Consent / Study Mode"]
-    B --> C["Live camera observes paper"]
+    A["Student chooses profile"] --> C["Live camera observes paper"]
     C --> D["Student writes a step"]
     D --> E["Student asks for check or tutor checks a frame"]
     E --> F["Supabase calls OpenAI"]
@@ -87,7 +86,6 @@ Voice control is split into four responsibilities:
 | `VoiceControlState.swift` | Tracks permission, listening, transcript, command, confidence, and mode |
 | `VoiceCommandRecognizer.swift` | Uses Apple Speech and microphone APIs to listen for commands |
 | `VoiceCommandRouter.swift` | Maps commands to valid app actions based on current context |
-| `VoiceControlIndicator.swift` | Tiny student-facing microphone state indicator |
 | `VoiceDebugPanel.swift` | Admin-only debug/test surface for voice routing |
 
 Supported command groups:
@@ -107,9 +105,10 @@ Voice routing is context-aware. For example, "start" only starts from a ready st
 
 Student-facing voice UI stays minimal:
 
-- Student Picker, Consent, Live Session, and Teach Mode show only a tiny microphone indicator.
+- The scan screen has one microphone toggle beside Show Step and Mark Fixed.
+- Other student-facing screens do not show microphone controls.
 - No transcript panels are shown to students.
-- Voice debug details are only visible from Admin / Holder settings.
+- Voice debug details are not shown in the normal student flow.
 - If speech recognition permission is denied, the app remains fully usable through touch controls.
 
 ## Page Map
@@ -118,13 +117,12 @@ Student-facing voice UI stays minimal:
 flowchart TD
     Root["RootView"] --> Picker["Student Picker"]
     Picker --> NewStudent["New Student Sheet"]
-    Picker --> Consent["Consent / Study Mode"]
+    Picker --> Live["Live Tutor Session"]
     Picker --> Admin["Admin Review"]
-    Consent --> Live["Live Tutor Session"]
     Live --> Teach["Teach Mode"]
     Teach --> Live
     Live --> Reflection["Reflection"]
-    Admin --> Holder["Holder Settings Sheet"]
+    Admin --> Session["Session Detail"]
     Reflection --> Picker
 ```
 
@@ -190,40 +188,15 @@ Fields:
 On create:
 
 1. A new `StudentProfile` is created.
-2. `AppModel.saveStudent(_:)` writes it to local memory.
-3. The sheet dismisses.
+2. Study logging and no-answer tutoring are enabled by policy.
+3. `AppModel.saveStudent(_:)` writes it to local memory.
+4. The sheet dismisses.
 
-### Consent / Study Mode
+### Session Policies
 
-File:
-
-```text
-MathTutorSwift/iPadApp/MathTutor/MathTutor/TeacherUI/ConsentView.swift
-```
-
-Purpose:
-
-Confirms that the session can be logged and that no-answer tutoring mode is active.
-
-Design:
-
-- Minimal notebook page.
-- No header or footer.
-- Student name is the main visible text.
-- Uses two simple switches and two icon controls.
-
-Controls:
-
-| Control | Behavior |
-| --- | --- |
-| Study log toggle | Must be enabled to begin |
-| No answers toggle | Locked on for V1 |
-| Return icon | Goes back to Student Picker |
-| Camera icon | Starts the tutoring session |
-
-Why this page exists:
-
-Because this is a research prototype. The app is tracking educational interactions, and the user should clearly know when logging is active.
+Study logging and no-answer tutoring are always active. Selecting a student starts
+the live session directly; there is no intermediate settings screen and students
+cannot disable either research policy.
 
 ### Live Tutor Session
 
@@ -252,10 +225,11 @@ Visible controls:
 | Control | Icon | Behavior |
 | --- | --- | --- |
 | Check work | `viewfinder` | Captures a frame and asks the backend to analyze it |
-| Pause/resume | `pause.fill` / `play.fill` | Temporarily pauses observation flow |
-| Ask question | `questionmark` | Student interruption / confused marker |
 | Teach Mode | `rectangle.inset.filled.and.person.filled` | Enters math-only teaching screen |
 | Mark corrected | `checkmark` | Marks the last tutor event as self-corrected |
+| Microphone | `mic.fill` / `mic.slash` | Turns student voice input on or off |
+| AirPlay | `airplayvideo` | Opens the Apple route picker |
+| Pause/resume | `pause.fill` / `play.fill` | Temporarily pauses observation flow |
 | Repeat hint | `speaker.wave.2` | Replays the current voice hint |
 | End session | `xmark` | Ends session and routes to Reflection |
 
@@ -366,9 +340,7 @@ Content:
 - Total checks.
 - Mistakes detected.
 - Self-corrections.
-- A short "what improved" note.
-- A short "what was hard" note.
-- Recent tutor moments.
+- A chronological log of checks, detected mistakes, and tutor guidance.
 
 Design:
 
@@ -394,59 +366,16 @@ Protected-style review mode for a professor, mentor, or researcher. V1 does not 
 
 Content:
 
-- Student count.
-- Session count.
-- Total mistakes.
-- Total self-corrections.
-- Per-student misconception history.
-- Recent sessions.
-- Holder settings access.
+- Student selection.
+- Per-student misconception patterns.
+- Completed session history.
+- Session details with checks, mistakes, corrections, and tutor guidance.
 
 Design:
 
 - Sparse student history.
 - More detailed than student-facing pages, but still not a business dashboard.
 - Uses quiet counts and table-like rows instead of large analytics panels.
-
-### Holder Settings
-
-Files:
-
-```text
-MathTutorSwift/iPadApp/MathTutor/MathTutor/TeacherUI/StandControl/
-```
-
-Purpose:
-
-Prototype controls for a future motorized iPad holder. This is app-side software only; hardware is not required for V1.
-
-Modes:
-
-| Mode | Meaning |
-| --- | --- |
-| Observe Mode | Rear camera points toward the paper |
-| Teach Mode | Screen faces the student |
-| Moving | Holder command is in progress |
-| Stopped | Emergency stop state |
-| Error | Holder command failed |
-
-Commands:
-
-| Command | Intended hardware behavior |
-| --- | --- |
-| Observe Mode | Rotate to paper-facing camera position |
-| Teach Mode | Rotate screen toward student |
-| Pitch Down | Fine adjustment toward paper |
-| Pitch Up | Fine adjustment toward student |
-| Center | Neutral position |
-| Emergency Stop | Stop all movement |
-
-Implementation:
-
-- `StandController` chooses simulated or HTTP control.
-- `SimulatedStandController` pretends to move without hardware.
-- `HTTPStandController` is prepared for future ESP32/local network endpoints.
-- Holder errors do not block the tutoring UI.
 
 ## App Architecture
 
@@ -457,7 +386,6 @@ flowchart TB
     subgraph UI["TeacherUI SwiftUI"]
         Root["RootView"]
         Picker["StudentPickerView"]
-        Consent["ConsentView"]
         Live["LiveTutorSessionView"]
         Reflection["ReflectionView"]
         Admin["AdminReviewView"]
@@ -490,7 +418,6 @@ flowchart TB
 
     Root --> AppModel
     Picker --> AppModel
-    Consent --> AppModel
     Live --> Camera
     Live --> Voice
     Live --> Stand
@@ -559,9 +486,9 @@ Important methods:
 | Method | Role |
 | --- | --- |
 | `load()` | Reads local students and sessions |
-| `select(_:)` | Routes to consent or live session |
+| `select(_:)` | Starts a live session for the selected student |
 | `saveStudent(_:)` | Creates or updates a local student profile |
-| `acceptConsent(for:)` | Marks consent accepted and starts live session |
+| `deleteStudent(_:)` | Removes a student and that student's local session logs |
 | `finishSession(_:)` | Saves locally, logs to Supabase, routes to Reflection |
 | `returnHome()` | Reloads state and returns to Student Picker |
 
@@ -1070,7 +997,6 @@ Architecture:
 ```mermaid
 flowchart TB
     Live["LiveTutorSessionView"] --> Controller["StandController"]
-    Admin["HolderSettingsView"] --> Controller
     Controller --> Sim["SimulatedStandController"]
     Controller --> HTTP["HTTPStandController"]
     Sim --> State["StandState"]
@@ -1082,6 +1008,7 @@ Current behavior:
 - If no holder URL is configured, simulated mode is used.
 - Simulated mode logs movement and updates state after a short delay.
 - HTTP mode is prepared for future local-network hardware.
+- There is no holder configuration or control page in Admin.
 - The app includes local-network privacy text for future holder control.
 
 Future HTTP endpoints:
@@ -1129,7 +1056,6 @@ Safe hardware testing order:
 │               ├── AppSecrets.swift
 │               ├── CameraObservationService.swift
 │               ├── CameraPreview.swift
-│               ├── ConsentView.swift
 │               ├── LiveTutorSessionView.swift
 │               ├── MTDesignSystem.swift
 │               ├── ReflectionView.swift
@@ -1324,7 +1250,7 @@ V2 should not block V1. The current prototype proves the learning experience fir
 | Native iPad SwiftUI app | Implemented |
 | Flat STEM notebook UI | Implemented |
 | Student Picker | Implemented |
-| Consent / Study Mode | Implemented |
+| Always-on study logging and no-answer policy | Implemented |
 | Live Tutor Session | Implemented |
 | Math-only Teach Mode | Implemented |
 | Reflection | Implemented |

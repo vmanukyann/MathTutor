@@ -18,17 +18,20 @@ public struct TutorObservationRequest: Encodable, Sendable {
     public var student: StudentProfile
     public var checkNumber: Int
     public var noAnswerMode: Bool
+    public var studentQuestion: String?
 
     public init(
         imageBase64: String,
         student: StudentProfile,
         checkNumber: Int,
-        noAnswerMode: Bool
+        noAnswerMode: Bool,
+        studentQuestion: String? = nil
     ) {
         self.imageBase64 = imageBase64
         self.student = student
         self.checkNumber = checkNumber
         self.noAnswerMode = noAnswerMode
+        self.studentQuestion = studentQuestion
     }
 }
 
@@ -77,7 +80,8 @@ public final class SupabaseTutorClient: TutorBrainServicing, @unchecked Sendable
             ),
             session: EdgeSessionContext(
                 checkNumber: request.checkNumber,
-                noAnswerMode: request.noAnswerMode
+                noAnswerMode: request.noAnswerMode,
+                studentQuestion: request.studentQuestion
             )
         )
 
@@ -152,6 +156,7 @@ private struct EdgeStudentContext: Encodable {
 private struct EdgeSessionContext: Encodable {
     var checkNumber: Int
     var noAnswerMode: Bool
+    var studentQuestion: String?
 }
 
 private struct EdgeSessionLogRequest: Encodable {

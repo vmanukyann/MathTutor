@@ -10,6 +10,7 @@ type TutorObservation = {
     | "invalid_cancellation"
     | "slope_intercept"
     | "factoring"
+    | "square_root"
     | "sat_strategy"
     | "unclear_work";
   hint_level: number;
@@ -27,6 +28,75 @@ const JSON_HEADERS = {
 };
 
 const OBSERVE_TIMEOUT_MS = 35_000;
+const FORBIDDEN_MATH_WORDS = [
+  "something",
+  "unknown",
+  "answer",
+  "value",
+  "placeholder",
+  "undefined",
+  "variable",
+  "number",
+  "term",
+  "solution",
+  "result",
+];
+const ALLOWED_LATEX_COMMANDS = new Set([
+  "cdot",
+  "div",
+  "frac",
+  "geq",
+  "leq",
+  "left",
+  "neq",
+  "pm",
+  "right",
+  "sqrt",
+  "times",
+]);
+
+const OBSERVATION_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    mistake_detected: { type: "boolean" },
+    confidence: { type: "string", enum: ["low", "medium", "high"] },
+    misconception_type: {
+      type: "string",
+      enum: [
+        "sign_error",
+        "distribution",
+        "equation_balance",
+        "invalid_cancellation",
+        "slope_intercept",
+        "factoring",
+        "square_root",
+        "sat_strategy",
+        "unclear_work",
+      ],
+    },
+    hint_level: { type: "integer", enum: [1, 2, 3, 4] },
+    hint: { type: "string" },
+    teacher_note: { type: "string" },
+    work_summary: { type: "string" },
+    teach_steps: {
+      type: "array",
+      items: { type: "string" },
+    },
+    final_answer_blocked: { type: "boolean", enum: [true] },
+  },
+  required: [
+    "mistake_detected",
+    "confidence",
+    "misconception_type",
+    "hint_level",
+    "hint",
+    "teacher_note",
+    "work_summary",
+    "teach_steps",
+    "final_answer_blocked",
+  ],
+} as const;
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
@@ -52,19 +122,143 @@ function parseResponsesText(responseJson: any): string {
     .join("\n");
 }
 
-function normalizeObservation(value: unknown): TutorObservation {
+function hasBalancedBraces(input: string): boolean {
+  let depth = 0;
+  for (const character of input) {
+    if (character === "{") depth += 1;
+    if (character === "}") depth -= 1;
+    if (depth < 0) return false;
+  }
+  return depth === 0;
+}
+
+function evaluateNumericExpression(source: string): number | undefined {
+  const normalized = source
+    .replace(/\\cdot|\\times/g, "*")
+    .replace(/\\div/g, "/")
+    .replace(/[{}]/g, (token) => token === "{" ? "(" : ")")
+    .replace(/\s+/g, "");
+
+  if (!/^[0-9+\-*/().]+$/.test(normalized)) return undefined;
+
+  const tokens = normalized.match(/\d+(?:\.\d+)?|[()+\-*/]/g);
+  if (!tokens || tokens.join("") !== normalized) return undefined;
+  let cursor = 0;
+
+  function parsePrimary(): number | undefined {
+    const token = tokens[cursor];
+    if (token === "+" || token === "-") {
+      cursor += 1;
+      const value = parsePrimary();
+      return value === undefined ? undefined : token === "-" ? -value : value;
+    }
+    if (token === "(") {
+      cursor += 1;
+      const value = parseExpression();
+      if (tokens[cursor] !== ")") return undefined;
+      cursor += 1;
+      return value;
+    }
+    if (token && /^\d/.test(token)) {
+      cursor += 1;
+      return Number(token);
+    }
+    return undefined;
+  }
+
+  function parseTerm(): number | undefined {
+    let value = parsePrimary();
+    if (value === undefined) return undefined;
+    while (tokens[cursor] === "*" || tokens[cursor] === "/") {
+      const operation = tokens[cursor++];
+      const right = parsePrimary();
+      if (right === undefined || (operation === "/" && right === 0)) return undefined;
+      value = operation === "*" ? value * right : value / right;
+    }
+    return value;
+  }
+
+  function parseExpression(): number | undefined {
+    let value = parseTerm();
+    if (value === undefined) return undefined;
+    while (tokens[cursor] === "+" || tokens[cursor] === "-") {
+      const operation = tokens[cursor++];
+      const right = parseTerm();
+      if (right === undefined) return undefined;
+      value = operation === "+" ? value + right : value - right;
+    }
+    return value;
+  }
+
+  const result = parseExpression();
+  return cursor === tokens.length && Number.isFinite(result) ? result : undefined;
+}
+
+function hasFalseNumericEquality(step: string): boolean {
+  const sides = step.split("=");
+  if (sides.length !== 2) return false;
+  const left = evaluateNumericExpression(sides[0]);
+  const right = evaluateNumericExpression(sides[1]);
+  if (left === undefined || right === undefined) return false;
+  return Math.abs(left - right) > 1e-9;
+}
+
+function isValidMathOnlyStep(step: string): boolean {
+  const normalized = step.trim();
+  if (!normalized || normalized.length > 160 || !hasBalancedBraces(normalized)) return false;
+  if (normalized.includes("$") || normalized.includes("...") || normalized.includes(",")) return false;
+  if (/^\s*[A-Za-z]\s*=\s*(?![A-Za-z](?:\s|$))/.test(normalized)) return false;
+
+  const lowercased = normalized.toLowerCase();
+  if (FORBIDDEN_MATH_WORDS.some((word) => new RegExp(`\\b${word}\\b`, "i").test(lowercased))) {
+    return false;
+  }
+  if (/\\text|\\mathrm|\\operatorname/i.test(normalized)) return false;
+  if (/(^|[^\\])\b(?:frac|sqrt|cdot|times|div|neq|leq|geq)\b/i.test(normalized)) return false;
+
+  const commands = [...normalized.matchAll(/\\([A-Za-z]+)/g)].map((match) => match[1]);
+  if (commands.some((command) => !ALLOWED_LATEX_COMMANDS.has(command))) return false;
+
+  const withoutCommands = normalized.replace(/\\[A-Za-z]+/g, "");
+  if (/[A-Za-z]{2,}/.test(withoutCommands)) return false;
+
+  return !hasFalseNumericEquality(normalized);
+}
+
+function canonicalHint(
+  misconception: TutorObservation["misconception_type"],
+  mistakeDetected: boolean,
+): string {
+  if (!mistakeDetected) return "Check the newest line once more, then continue.";
+
+  switch (misconception) {
+    case "sign_error":
+      return "Check the sign that changed between the last two lines.";
+    case "distribution":
+      return "Check whether the outside factor reached every term inside the parentheses.";
+    case "equation_balance":
+      return "Check whether the same operation was applied to both sides.";
+    case "invalid_cancellation":
+      return "Check whether the factor you canceled multiplies the entire numerator and denominator.";
+    case "slope_intercept":
+      return "Check which quantity represents the rate of change and which represents the starting point.";
+    case "factoring":
+      return "Check both the product and the sum of the factors.";
+    case "square_root":
+      return "Check the square root and preserve both sign branches.";
+    case "sat_strategy":
+      return "Check whether a shorter equivalent form preserves the original equation.";
+    case "unclear_work":
+      return "Scan again.";
+  }
+}
+
+function normalizeObservation(value: unknown, hasStudentQuestion = false): TutorObservation {
   if (!value || typeof value !== "object") {
     throw new Error("Observation response is not a JSON object.");
   }
 
   const row = value as Record<string, unknown>;
-  const confidenceRaw = typeof row.confidence === "string"
-    ? row.confidence.toLowerCase()
-    : "medium";
-  const confidence = ["low", "medium", "high"].includes(confidenceRaw)
-    ? confidenceRaw as TutorObservation["confidence"]
-    : "medium";
-
   const mistakeRaw = typeof row.misconception_type === "string"
     ? row.misconception_type.toLowerCase()
     : "unclear_work";
@@ -75,6 +269,7 @@ function normalizeObservation(value: unknown): TutorObservation {
     "invalid_cancellation",
     "slope_intercept",
     "factoring",
+    "square_root",
     "sat_strategy",
     "unclear_work",
   ];
@@ -86,19 +281,26 @@ function normalizeObservation(value: unknown): TutorObservation {
     ? row.teach_steps
       .filter((step): step is string => typeof step === "string" && step.trim().length > 0)
       .map((step) => step.trim())
+      .filter(isValidMathOnlyStep)
       .slice(0, 5)
     : undefined;
+  const mistakeDetected = typeof row.mistake_detected === "boolean"
+    ? row.mistake_detected
+    : true;
+  const confidence: TutorObservation["confidence"] = misconceptionType === "unclear_work"
+    ? "low"
+    : mistakeDetected
+    ? "high"
+    : "medium";
 
   return {
-    mistake_detected: typeof row.mistake_detected === "boolean"
-      ? row.mistake_detected
-      : true,
+    mistake_detected: mistakeDetected,
     confidence,
     misconception_type: misconceptionType,
     hint_level: Math.min(4, Math.max(1, Number(row.hint_level ?? 1))),
-    hint: typeof row.hint === "string" && row.hint.trim().length > 0
+    hint: hasStudentQuestion && typeof row.hint === "string" && row.hint.trim().length > 0
       ? row.hint.trim()
-      : "Pause and compare this line to the one above it.",
+      : canonicalHint(misconceptionType, mistakeDetected),
     teacher_note: typeof row.teacher_note === "string" ? row.teacher_note.trim() : "",
     work_summary: typeof row.work_summary === "string" ? row.work_summary.trim() : "",
     teach_steps: teachSteps && teachSteps.length > 0 ? teachSteps : undefined,
@@ -130,6 +332,9 @@ function observeWorkPrompt(student: any, session: any): string {
     : "{}";
   const checkNumber = Number(session?.check_number ?? 1);
   const noAnswerMode = session?.no_answer_mode !== false;
+  const studentQuestion = typeof session?.student_question === "string"
+    ? session.student_question.trim().slice(0, 300)
+    : "";
 
   return `
 You are MathTutor, a real-time guided math teacher watching ${name}'s handwritten paper.
@@ -140,8 +345,10 @@ Student context:
 - Past misconception counts: ${misconceptions}
 - Session check number: ${checkNumber}
 - No-answer mode: ${noAnswerMode ? "enabled" : "disabled"}
+${studentQuestion ? `- Student's spoken question: ${JSON.stringify(studentQuestion)}` : ""}
 
 Analyze the newest visible step in the image. Detect likely reasoning mistakes, but do not over-interrupt if confidence is low. Use the student's past mistakes to personalize the hint when relevant.
+${studentQuestion ? "Answer the student's spoken question about the visible work with one concise guided hint. Do not ignore the question." : ""}
 
 Hard rules:
 - Never reveal the final answer.
@@ -156,17 +363,20 @@ Hard rules:
 - Prefer LaTeX commands such as \\frac{a}{b}, x^{2}, \\cdot, \\neq, and \\sqrt{x}; never use Unicode superscripts or slash fractions.
 - Because the response is JSON, escape every LaTeX backslash as a JSON double backslash. For example, return "\\\\frac{1}{2}", never "\\frac{1}{2}".
 - Every teach_steps line must be mathematically valid and arithmetically checked.
-- Never use placeholder words such as "something", "unknown", "answer", "value", or "placeholder" in teach_steps.
-- Never put prose or \\text{...} in teach_steps; use mathematical symbols and variables only.
+- Never use any English word in teach_steps. Words such as "something", "unknown", "answer", "value", "variable", "term", "solution", and "result" are forbidden.
+- Never put prose, labels, units, or \\text{...} in teach_steps; use mathematical symbols and single-letter variables only.
+- Use one canonical derivation. Given the same visible work, return the same misconception, hint level, and teach_steps every time.
+- Use consistent operator spacing and canonical forms: \\frac{a}{b}, \\sqrt{x}, x^{2}, a \\cdot b, and \\pm.
 - Preserve branches correctly. For square roots, use \\pm and never combine two solutions with a comma.
+- Classify an incorrect square root, missing \\pm, or wrong root magnitude as "square_root".
 - In no-answer mode, stop at the most useful intermediate step before the final solved value.
 - If the work is correct or too unclear, say so without inventing a mistake.
 
-Return ONLY valid JSON with exactly these keys:
+Return only the requested structured object. When the image is unclear, use misconception_type "unclear_work" and an empty teach_steps array.
 {
   "mistake_detected": boolean,
   "confidence": "low" | "medium" | "high",
-  "misconception_type": "sign_error" | "distribution" | "equation_balance" | "invalid_cancellation" | "slope_intercept" | "factoring" | "sat_strategy" | "unclear_work",
+  "misconception_type": "sign_error" | "distribution" | "equation_balance" | "invalid_cancellation" | "slope_intercept" | "factoring" | "square_root" | "sat_strategy" | "unclear_work",
   "hint_level": 1 | 2 | 3 | 4,
   "hint": "one short guided hint without the final answer",
   "teacher_note": "brief private note for admin/research review",
@@ -329,7 +539,15 @@ Deno.serve(async (req) => {
               ],
             },
           ],
-          text: { format: { type: "json_object" } },
+          text: {
+            format: {
+              type: "json_schema",
+              name: "tutor_observation",
+              strict: true,
+              schema: OBSERVATION_SCHEMA,
+            },
+          },
+          temperature: 0,
           max_output_tokens: 700,
         }),
       },
@@ -355,7 +573,12 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "Observation response content was empty." }, 500);
     }
 
-    const observation = normalizeObservation(JSON.parse(stripCodeFences(rawText)));
+    const hasStudentQuestion = typeof (session as any)?.student_question === "string"
+      && (session as any).student_question.trim().length > 0;
+    const observation = normalizeObservation(
+      JSON.parse(stripCodeFences(rawText)),
+      hasStudentQuestion,
+    );
     return jsonResponse(observation);
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {

@@ -78,7 +78,11 @@ struct VoiceCommandMatch: Equatable, Sendable {
 }
 
 enum VoiceCommandParser {
-    static func parse(_ transcript: String, confidence: Double? = nil) -> VoiceCommandMatch? {
+    static func parse(
+        _ transcript: String,
+        confidence: Double? = nil,
+        allowGenericQuestion: Bool = false
+    ) -> VoiceCommandMatch? {
         let normalized = normalize(transcript)
         guard !normalized.isEmpty else { return nil }
 
@@ -119,6 +123,8 @@ enum VoiceCommandParser {
             command = .resume
         } else if containsAny(normalized, confirmationPhrases) {
             command = .confirmUnderstood
+        } else if allowGenericQuestion, isLikelyQuestion(normalized) {
+            command = .askQuestion
         } else {
             return nil
         }
@@ -139,6 +145,28 @@ enum VoiceCommandParser {
     private static func containsAny(_ normalized: String, _ phrases: [String]) -> Bool {
         phrases.contains { phrase in
             normalized == phrase || normalized.contains(" \(phrase)") || normalized.contains("\(phrase) ")
+        }
+    }
+
+    private static func isLikelyQuestion(_ normalized: String) -> Bool {
+        let questionOpeners = [
+            "why",
+            "how",
+            "what",
+            "where",
+            "when",
+            "which",
+            "can you",
+            "could you",
+            "would you",
+            "will you",
+            "do i",
+            "did i",
+            "is this",
+            "am i"
+        ]
+        return questionOpeners.contains { opener in
+            normalized == opener || normalized.hasPrefix("\(opener) ")
         }
     }
 
@@ -171,6 +199,11 @@ enum VoiceCommandParser {
         "flip",
         "flip the ipad",
         "show the step",
+        "show a hint",
+        "show me a hint",
+        "give me a hint",
+        "hint please",
+        "show hints",
         "teach me",
         "im stuck",
         "i am stuck"
@@ -220,7 +253,10 @@ enum VoiceCommandParser {
         "did i do this right",
         "am i right",
         "scan my work",
-        "check the problem"
+        "check the problem",
+        "check the problem im pointing to",
+        "check what im pointing to",
+        "check the work im pointing to"
     ]
 
     private static let hearingTestPhrases = [

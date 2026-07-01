@@ -20,7 +20,7 @@ final class VoiceTutor: NSObject, ObservableObject {
         do {
             try audioSession.setCategory(
                 .playAndRecord,
-                mode: .spokenAudio,
+                mode: .voiceChat,
                 options: [.defaultToSpeaker, .allowBluetoothHFP, .duckOthers]
             )
             try audioSession.setActive(true)

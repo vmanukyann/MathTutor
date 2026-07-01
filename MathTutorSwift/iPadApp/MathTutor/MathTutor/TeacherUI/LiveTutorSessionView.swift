@@ -3,6 +3,7 @@ import UIKit
 
 struct LiveTutorSessionView: View {
     @EnvironmentObject private var appModel: AppModel
+    @Environment(\.scenePhase) private var scenePhase
 
     let student: StudentProfile
 
@@ -23,6 +24,7 @@ struct LiveTutorSessionView: View {
     @State private var lastTeachModeRequest = Date.distantPast
     @State private var lastCheckRequest = Date.distantPast
     @State private var teachModeVariant = 0
+    @State private var microphoneEnabled = true
 
     private let tutorClient = SupabaseTutorClient(configuration: AppSecrets.supabase)
     private let policy = TutorPolicy(noAnswerMode: true)
@@ -44,16 +46,9 @@ struct LiveTutorSessionView: View {
             }
         }
         .task {
-            voice.onSpeechStarted = {
-                appModel.voiceRecognizer.stopListening()
-            }
-            voice.onSpeechFinished = {
-                Task {
-                    await appModel.voiceRecognizer.ensureListening()
-                }
-            }
             await camera.start()
             await appModel.voiceRecognizer.ensureListening()
+            microphoneEnabled = appModel.voiceRecognizer.snapshot.isListening
             standController.send(.observeMode)
         }
         .onChange(of: appModel.voiceRecognizer.commandEventID) { _, _ in
@@ -69,9 +64,17 @@ struct LiveTutorSessionView: View {
                 ? "AirPlay connected. Show Step will use the TV."
                 : "AirPlay disconnected. Tap AirPlay and choose your TV."
         }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, microphoneEnabled else { return }
+            Task {
+                await appModel.voiceRecognizer.ensureListening()
+                microphoneEnabled = appModel.voiceRecognizer.snapshot.isListening
+            }
+        }
         .onDisappear {
             camera.stop()
             voice.stop()
+            appModel.voiceRecognizer.stopListening()
             standController.returnToObserve()
             appModel.clearExternalTeachMode()
         }
@@ -151,17 +154,10 @@ struct LiveTutorSessionView: View {
     }
 
     private var topControlBar: some View {
-        ZStack {
-            HStack {
-                VoiceControlIndicator(
-                    snapshot: appModel.voiceRecognizer.snapshot,
-                    onRestart: restartVoiceControl
-                )
-                Spacer()
-                endButton
-            }
-
+        HStack {
             scanStatusBadge
+            Spacer()
+            endButton
         }
         .padding(.horizontal, 18)
         .padding(.top, 18)
@@ -268,15 +264,6 @@ struct LiveTutorSessionView: View {
 
                 HStack(spacing: 8) {
                     Button {
-                        handleVoiceQuestion()
-                    } label: {
-                        Label("Ask", systemImage: "questionmark")
-                    }
-                    .buttonStyle(MTLabeledControlButton(tint: MTTheme.chemicalGold))
-                    .disabled(status == .thinking)
-                    .accessibilityLabel("Ask a question")
-
-                    Button {
                         requestTeachMode()
                     } label: {
                         Label("Show Step", systemImage: appModel.externalDisplay.isConnected ? "airplayvideo" : "rectangle.inset.filled.and.person.filled")
@@ -286,12 +273,24 @@ struct LiveTutorSessionView: View {
                     .accessibilityLabel(appModel.externalDisplay.isConnected ? "Show step on external display" : "Show step")
 
                     Button {
-                        togglePause()
+                        markSelfCorrected()
                     } label: {
-                        Label(status == .paused ? "Resume" : "Pause", systemImage: status == .paused ? "play.fill" : "pause.fill")
+                        Label("Mark Fixed", systemImage: "checkmark")
                     }
-                    .buttonStyle(MTLabeledControlButton(tint: MTTheme.graphiteInk))
-                    .accessibilityLabel(status == .paused ? "Resume watching" : "Pause watching")
+                    .buttonStyle(MTLabeledControlButton(tint: latestObservation == nil ? MTTheme.disabledGray : MTTheme.labGreen))
+                    .disabled(latestObservation == nil)
+                    .accessibilityLabel("Mark corrected")
+
+                    Button {
+                        toggleMicrophone()
+                    } label: {
+                        Label(
+                            microphoneEnabled ? "Mic On" : "Mic Off",
+                            systemImage: microphoneEnabled ? "mic.fill" : "mic.slash"
+                        )
+                    }
+                    .buttonStyle(MTLabeledControlButton(tint: microphoneEnabled ? MTTheme.labGreen : MTTheme.graphiteInk))
+                    .accessibilityLabel(microphoneEnabled ? "Turn microphone off" : "Turn microphone on")
                 }
 
                 HStack(spacing: 8) {
@@ -305,13 +304,12 @@ struct LiveTutorSessionView: View {
                     #endif
 
                     Button {
-                        markSelfCorrected()
+                        togglePause()
                     } label: {
-                        Label("Mark Fixed", systemImage: "checkmark")
+                        Label(status == .paused ? "Resume" : "Pause", systemImage: status == .paused ? "play.fill" : "pause.fill")
                     }
-                    .buttonStyle(MTLabeledControlButton(tint: latestObservation == nil ? MTTheme.disabledGray : MTTheme.labGreen))
-                    .disabled(latestObservation == nil)
-                    .accessibilityLabel("Mark corrected")
+                    .buttonStyle(MTLabeledControlButton(tint: MTTheme.graphiteInk))
+                    .accessibilityLabel(status == .paused ? "Resume watching" : "Pause watching")
 
                     Button {
                         voice.speak(latestHint)
@@ -402,14 +400,6 @@ struct LiveTutorSessionView: View {
                     .accessibilityLabel("Scan again. Tap to return to the camera.")
             } else {
                 VStack {
-                    HStack {
-                        VoiceControlIndicator(
-                            snapshot: appModel.voiceRecognizer.snapshot,
-                            onRestart: restartVoiceControl
-                        )
-                        Spacer()
-                    }
-
                     Spacer()
 
                     ScrollView {
@@ -624,6 +614,11 @@ struct LiveTutorSessionView: View {
                 ["x² + 5x + 6", "2 · 3 = 6", "2 + 3 = 5"],
                 ["x² + 5x + 6", "= (x + 2)(x + 3)"]
             ]
+        case .squareRoot:
+            return [
+                ["u^{2} = 16", "u = \\pm\\sqrt{16}", "u = \\pm 4"],
+                ["u^{2} = a", "u = \\pm\\sqrt{a}"]
+            ]
         case .satStrategy:
             return [
                 ["2x + 6 = 18", "2(x + 3) = 18", "x + 3 = 9"],
@@ -641,25 +636,10 @@ struct LiveTutorSessionView: View {
 
     private func areValidTeachSteps(_ steps: [String]) -> Bool {
         guard (2...5).contains(steps.count) else { return false }
-
-        let forbiddenTerms = [
-            "something",
-            "unknown",
-            "answer",
-            "placeholder",
-            "todo",
-            "\\text"
-        ]
-
-        return steps.allSatisfy { step in
-            let normalized = step.lowercased()
-            return !forbiddenTerms.contains(where: normalized.contains)
-                && !normalized.contains(",")
-                && !normalized.contains("...")
-        }
+        return steps.allSatisfy(LaTeXNormalizer.isMathOnlyExpression)
     }
 
-    private func checkWork() async {
+    private func checkWork(studentQuestion: String? = nil) async {
         guard status != .paused, status != .thinking else { return }
         guard Date().timeIntervalSince(lastCheckRequest) >= checkWorkCooldown else { return }
 
@@ -678,7 +658,8 @@ struct LiveTutorSessionView: View {
                 imageBase64: imageData.base64EncodedString(),
                 student: student,
                 checkNumber: session.events.count + 1,
-                noAnswerMode: true
+                noAnswerMode: true,
+                studentQuestion: studentQuestion
             )
             var observation = try await tutorClient.observeWork(request)
             observation.hint = policy.sanitizedHint(observation.hint)
@@ -761,9 +742,6 @@ struct LiveTutorSessionView: View {
             if status == .paused {
                 togglePause()
             }
-            Task {
-                await appModel.voiceRecognizer.startListening()
-            }
         case .emergencyStop:
             latestHint = "Holder stopped."
         case .startSession, .ignore(_):
@@ -830,7 +808,9 @@ struct LiveTutorSessionView: View {
         }
 
         Task {
-            await showHowToDoThis()
+            let question = appModel.voiceRecognizer.snapshot.lastTranscript
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            await showHowToDoThis(question: question.isEmpty ? nil : question)
             appModel.voiceRecognizer.setQuestionMode(false)
         }
     }
@@ -856,12 +836,12 @@ struct LiveTutorSessionView: View {
         standController.send(.teachMode)
     }
 
-    private func showHowToDoThis() async {
+    private func showHowToDoThis(question: String? = nil) async {
         guard status != .thinking else { return }
         latestHint = "Let me look at this step."
         voice.speak(latestHint)
 
-        await checkWork()
+        await checkWork(studentQuestion: question)
         guard latestObservation != nil, checkFailure == nil else { return }
         requestTeachMode()
     }
@@ -916,17 +896,24 @@ struct LiveTutorSessionView: View {
         appModel.finishSession(session)
     }
 
-    private func restartVoiceControl() {
-        if appModel.voiceRecognizer.snapshot.permissionStatus == .denied
-            || !appModel.voiceRecognizer.snapshot.isMicrophoneAuthorized {
+    private func toggleMicrophone() {
+        if microphoneEnabled {
+            microphoneEnabled = false
+            appModel.voiceRecognizer.stopListening()
+            return
+        }
+
+        if appModel.voiceRecognizer.snapshot.permissionStatus == .denied {
             if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
                 UIApplication.shared.open(settingsURL)
             }
             return
         }
 
+        microphoneEnabled = true
         Task {
             await appModel.voiceRecognizer.startListening()
+            microphoneEnabled = appModel.voiceRecognizer.snapshot.isListening
         }
     }
 }

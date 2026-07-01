@@ -23,6 +23,7 @@ public enum MisconceptionType: String, Codable, CaseIterable, Sendable {
     case invalidCancellation = "invalid_cancellation"
     case slopeIntercept = "slope_intercept"
     case factoring
+    case squareRoot = "square_root"
     case satStrategy = "sat_strategy"
     case unclearWork = "unclear_work"
 
@@ -34,6 +35,7 @@ public enum MisconceptionType: String, Codable, CaseIterable, Sendable {
         case .invalidCancellation: "Invalid cancellation"
         case .slopeIntercept: "Slope/intercept"
         case .factoring: "Factoring"
+        case .squareRoot: "Square root"
         case .satStrategy: "SAT strategy"
         case .unclearWork: "Unclear work"
         }

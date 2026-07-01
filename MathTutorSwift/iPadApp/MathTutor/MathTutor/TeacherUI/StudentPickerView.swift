@@ -4,6 +4,7 @@ struct StudentPickerView: View {
     @EnvironmentObject private var appModel: AppModel
     @State private var showingNewStudent = false
     @State private var selectedStudentID: StudentProfile.ID?
+    @State private var studentPendingDeletion: StudentProfile?
 
     private var selectedStudent: StudentProfile? {
         guard let selectedStudentID else { return nil }
@@ -37,6 +38,8 @@ struct StudentPickerView: View {
                                     isSelected: selectedStudent?.id == student.id
                                 ) {
                                     selectedStudentID = student.id
+                                } delete: {
+                                    studentPendingDeletion = student
                                 }
                             }
                         }
@@ -71,9 +74,6 @@ struct StudentPickerView: View {
 
                 VStack {
                     HStack {
-                        VoiceControlIndicator(snapshot: appModel.voiceRecognizer.snapshot)
-                            .accessibilityLabel("Voice start available")
-
                         Spacer()
                         Button {
                             appModel.route = .admin
@@ -93,6 +93,26 @@ struct StudentPickerView: View {
                     .environmentObject(appModel)
                     .presentationDetents([.medium])
                     .presentationDragIndicator(.visible)
+            }
+            .alert(
+                "Are you sure? This will delete your logs.",
+                isPresented: Binding(
+                    get: { studentPendingDeletion != nil },
+                    set: { if !$0 { studentPendingDeletion = nil } }
+                )
+            ) {
+                Button("No", role: .cancel) {
+                    studentPendingDeletion = nil
+                }
+                Button("Yes", role: .destructive) {
+                    if let student = studentPendingDeletion {
+                        appModel.deleteStudent(student)
+                        if selectedStudentID == student.id {
+                            selectedStudentID = nil
+                        }
+                    }
+                    studentPendingDeletion = nil
+                }
             }
             .onAppear {
                 selectedStudentID = nil
@@ -147,10 +167,12 @@ private struct StudentNotebookRow: View {
     let student: StudentProfile
     let isSelected: Bool
     let select: () -> Void
+    let delete: () -> Void
 
     var body: some View {
-        Button(action: select) {
-            HStack(spacing: 16) {
+        HStack(spacing: 8) {
+            Button(action: select) {
+                HStack(spacing: 16) {
                 Text(initials)
                     .font(.headline.weight(.semibold))
                     .foregroundStyle(isSelected ? MTTheme.notebookPaper : MTTheme.chalkboardGreen)
@@ -173,16 +195,25 @@ private struct StudentNotebookRow: View {
                         .font(.headline.weight(.semibold))
                         .foregroundStyle(MTTheme.labGreen)
                 }
+                }
+                .padding(14)
+                .contentShape(Rectangle())
             }
-            .padding(14)
-            .background(MTTheme.notebookPaper.opacity(0.82), in: RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous)
-                    .stroke(isSelected ? MTTheme.labGreen : MTTheme.gridLine, lineWidth: 1)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Select \(student.name)")
+
+            Button(action: delete) {
+                Image(systemName: "trash")
             }
+            .buttonStyle(MTIconButton(tint: MTTheme.errorRust))
+            .accessibilityLabel("Delete \(student.name)")
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Select \(student.name)")
+        .padding(6)
+        .background(MTTheme.notebookPaper.opacity(0.82), in: RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: MTTheme.controlRadius, style: .continuous)
+                .stroke(isSelected ? MTTheme.labGreen : MTTheme.gridLine, lineWidth: 1)
+        }
     }
 
     private var initials: String {
@@ -247,7 +278,8 @@ private struct NewStudentSheet: View {
                     Button("Create") {
                         let student = StudentProfile(
                             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-                            mathLevel: level
+                            mathLevel: level,
+                            consentAccepted: true
                         )
                         appModel.saveStudent(student)
                         dismiss()

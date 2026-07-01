@@ -6,13 +6,13 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXFileReference section */
-		4145CD472FD7D248006D9E18 /* MathTutor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MathTutor.app; sourceTree = BUILT_PRODUCTS_DIR; };
-/* End PBXFileReference section */
-
 /* Begin PBXBuildFile section */
 		7A1000013000000000000001 /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = 7A1000033000000000000001 /* SwiftMath */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		4145CD472FD7D248006D9E18 /* MathTutor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MathTutor.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
 		4145CD552FE33A00006D9E18 /* Exceptions for "MathTutor" folder in "MathTutor" target */ = {
@@ -113,11 +113,11 @@
 			);
 			mainGroup = 4145CD3E2FD7D248006D9E18;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
-			productRefGroup = 4145CD482FD7D248006D9E18 /* Products */;
 			packageReferences = (
 				7A1000023000000000000001 /* XCRemoteSwiftPackageReference "SwiftMath" */,
 			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 4145CD482FD7D248006D9E18 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -348,25 +348,6 @@
 		};
 /* End XCBuildConfiguration section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		7A1000023000000000000001 /* XCRemoteSwiftPackageReference "SwiftMath" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/mgriebling/SwiftMath.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.7.3;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		7A1000033000000000000001 /* SwiftMath */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 7A1000023000000000000001 /* XCRemoteSwiftPackageReference "SwiftMath" */;
-			productName = SwiftMath;
-		};
-/* End XCSwiftPackageProductDependency section */
-
 /* Begin XCConfigurationList section */
 		4145CD422FD7D248006D9E18 /* Build configuration list for PBXProject "MathTutor" */ = {
 			isa = XCConfigurationList;
@@ -387,6 +368,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		7A1000023000000000000001 /* XCRemoteSwiftPackageReference "SwiftMath" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mgriebling/SwiftMath.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.7.3;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		7A1000033000000000000001 /* SwiftMath */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7A1000023000000000000001 /* XCRemoteSwiftPackageReference "SwiftMath" */;
+			productName = SwiftMath;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 4145CD3F2FD7D248006D9E18 /* Project object */;
 }

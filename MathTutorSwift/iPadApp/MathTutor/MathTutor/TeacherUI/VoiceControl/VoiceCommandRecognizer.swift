@@ -122,7 +122,7 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
         do {
             try audioSession.setCategory(
                 .playAndRecord,
-                mode: .measurement,
+                mode: .voiceChat,
                 options: [.defaultToSpeaker, .allowBluetoothHFP]
             )
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
@@ -140,8 +140,12 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
         request.contextualStrings = [
             "can you hear me",
             "check my work",
+            "check what I am pointing to",
             "display this on the screen",
             "show me how to do this",
+            "show me a hint",
+            "pause",
+            "resume",
             "repeat this",
             "mark fixed",
             "end session"
@@ -203,7 +207,11 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
             snapshot.lastTranscript = transcript
             snapshot.confidence = result.bestTranscription.segments.last.map { Double($0.confidence) }
 
-            if let match = VoiceCommandParser.parse(transcript, confidence: snapshot.confidence),
+            if let match = VoiceCommandParser.parse(
+                transcript,
+                confidence: snapshot.confidence,
+                allowGenericQuestion: result.isFinal
+            ),
                shouldEmit(match) {
                 snapshot.lastRecognizedCommand = match.command
                 snapshot.currentVoiceMode = .processing

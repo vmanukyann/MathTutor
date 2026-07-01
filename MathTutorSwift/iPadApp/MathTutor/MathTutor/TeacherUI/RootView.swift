@@ -9,8 +9,6 @@ struct RootView: View {
             switch appModel.route {
             case .studentPicker:
                 StudentPickerView()
-            case .consent(let student):
-                ConsentView(student: student)
             case .liveSession(let student):
                 LiveTutorSessionView(
                     student: student,
@@ -22,15 +20,10 @@ struct RootView: View {
                 AdminReviewView()
             }
         }
-        .task {
-            await appModel.voiceRecognizer.ensureListening()
-        }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:
-                Task {
-                    await appModel.voiceRecognizer.ensureListening()
-                }
+                break
             case .background:
                 appModel.voiceRecognizer.stopListening()
             case .inactive:

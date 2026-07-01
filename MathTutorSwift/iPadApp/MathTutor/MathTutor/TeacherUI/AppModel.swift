@@ -8,7 +8,6 @@ final class AppModel: ObservableObject {
 
     enum Route {
         case studentPicker
-        case consent(StudentProfile)
         case liveSession(StudentProfile)
         case reflection(TutoringSession)
         case admin
@@ -55,11 +54,7 @@ final class AppModel: ObservableObject {
     }
 
     func select(_ student: StudentProfile) {
-        if student.consentAccepted {
-            route = .liveSession(student)
-        } else {
-            route = .consent(student)
-        }
+        route = .liveSession(student)
     }
 
     func saveStudent(_ student: StudentProfile) {
@@ -71,11 +66,11 @@ final class AppModel: ObservableObject {
         try? store.saveStudents(students)
     }
 
-    func acceptConsent(for student: StudentProfile) {
-        var updated = student
-        updated.consentAccepted = true
-        saveStudent(updated)
-        route = .liveSession(updated)
+    func deleteStudent(_ student: StudentProfile) {
+        students.removeAll { $0.id == student.id }
+        sessions.removeAll { $0.student.id == student.id }
+        try? store.saveStudents(students)
+        try? store.saveSessions(sessions)
     }
 
     func finishSession(_ session: TutoringSession) {
