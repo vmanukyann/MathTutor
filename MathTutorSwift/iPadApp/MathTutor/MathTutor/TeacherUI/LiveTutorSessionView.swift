@@ -8,7 +8,7 @@ struct LiveTutorSessionView: View {
     let student: StudentProfile
 
     @StateObject private var camera = CameraObservationService()
-    @StateObject private var voice = VoiceTutor()
+    @StateObject private var voice: VoiceTutor
     @ObservedObject private var standController: StandController
     @ObservedObject private var voiceRecognizer: VoiceCommandRecognizer
 
@@ -41,6 +41,7 @@ struct LiveTutorSessionView: View {
         self.student = student
         _standController = ObservedObject(wrappedValue: standController)
         _voiceRecognizer = ObservedObject(wrappedValue: voiceRecognizer)
+        _voice = StateObject(wrappedValue: VoiceTutor(configuration: AppSecrets.supabase))
         _session = State(initialValue: TutoringSession(student: student))
     }
 

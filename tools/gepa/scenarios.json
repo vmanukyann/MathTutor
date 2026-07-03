@@ -1,0 +1,75 @@
+[
+  {
+    "student_context": "Middle school; fractions; no prior misconception history.",
+    "visible_work": "3/4 + 1/2 = 4/6",
+    "student_question": "Is this right?",
+    "reference_guidance": "Identify unlike denominators and ask the student to rename one-half in fourths. Do not state the sum."
+  },
+  {
+    "student_context": "Middle school; linear equations; no-answer mode.",
+    "visible_work": "2x + 5 = 17",
+    "student_question": "What do I do first?",
+    "reference_guidance": "Ask which inverse operation undoes plus five. Do not solve for x."
+  },
+  {
+    "student_context": "Middle school; linear equations; student has reached 2x=12.",
+    "visible_work": "2x + 5 = 17; 2x = 12; x = 24",
+    "student_question": "",
+    "reference_guidance": "Point to multiplication by two and ask which operation undoes it."
+  },
+  {
+    "student_context": "Elementary; decimals.",
+    "visible_work": "0.4 < 0.35 because 4 < 35",
+    "student_question": "Why is this marked wrong?",
+    "reference_guidance": "Ask the learner to write 0.4 in hundredths or compare 40 cents with 35 cents."
+  },
+  {
+    "student_context": "Middle school; circle area.",
+    "visible_work": "r=5; A=5^2=25",
+    "student_question": "",
+    "reference_guidance": "Ask the student to check the circle-area formula and identify the missing factor pi."
+  },
+  {
+    "student_context": "High school; factoring.",
+    "visible_work": "x^2+7x+12",
+    "student_question": "Can you give me a hint?",
+    "reference_guidance": "Ask for two numbers with product 12 and sum 7. Do not reveal 3 and 4."
+  },
+  {
+    "student_context": "High school; factoring.",
+    "visible_work": "x^2+7x+12=(x+3)(x+4)",
+    "student_question": "Is that it?",
+    "reference_guidance": "Say the factors are consistent and ask the student to expand them to verify."
+  },
+  {
+    "student_context": "Middle school; probability.",
+    "visible_work": "3 red, 2 blue; P(red)=3/2",
+    "student_question": "",
+    "reference_guidance": "Ask for favorable outcomes and total outcomes, noting that a probability cannot exceed one."
+  },
+  {
+    "student_context": "High school; functions.",
+    "visible_work": "f(x)=x^2; f(x+h)=x^2+h^2",
+    "student_question": "",
+    "reference_guidance": "Ask the student to substitute the whole input x+h for every x before expanding."
+  },
+  {
+    "student_context": "High school; square roots.",
+    "visible_work": "x^2=9; x=3",
+    "student_question": "Done?",
+    "reference_guidance": "Ask whether both positive and negative values square to nine; do not state the complete final answer."
+  },
+  {
+    "student_context": "Middle school; low-confidence blurry image.",
+    "visible_work": "Possible equation, but operators and one digit are unreadable.",
+    "student_question": "",
+    "reference_guidance": "Do not invent a misconception. Ask the student to reposition the paper or clarify the unreadable line."
+  },
+  {
+    "student_context": "Elementary; multiplication; frustrated student.",
+    "visible_work": "17 x 24",
+    "student_question": "This is stupid. Just tell me.",
+    "reference_guidance": "Acknowledge frustration briefly, split 24 into 20+4, and ask for 17 times 20 without giving the final product."
+  }
+]
+

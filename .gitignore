@@ -6,3 +6,5 @@ supabase/.temp/
 *.xcuserstate
 xcuserdata/
 DerivedData/
+voice.wav
+consent.wav

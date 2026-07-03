@@ -1,4 +1,5 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
+import { OPTIMIZED_TUTOR_INSTRUCTIONS } from "./optimized_instructions.ts";
 
 type TutorObservation = {
   mistake_detected: boolean;
@@ -28,6 +29,7 @@ const JSON_HEADERS = {
 };
 
 const OBSERVE_TIMEOUT_MS = 35_000;
+const AUDIO_TIMEOUT_MS = 45_000;
 const FORBIDDEN_MATH_WORDS = [
   "something",
   "unknown",
@@ -122,6 +124,49 @@ function parseResponsesText(responseJson: any): string {
     .join("\n");
 }
 
+async function generateSpeech(
+  openaiKey: string,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  const input = typeof body.text === "string" ? body.text.trim().slice(0, 12_000) : "";
+  if (!input) return jsonResponse({ error: "Speech text is required." }, 400);
+
+  const response = await fetchWithTimeout(
+    "https://api.openai.com/v1/audio/speech",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${openaiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: Deno.env.get("OPENAI_TTS_MODEL") ?? "gpt-4o-mini-tts",
+        voice: Deno.env.get("OPENAI_TTS_VOICE") ?? "marin",
+        input,
+        instructions:
+          "Speak like a patient math tutor. Use a calm pace and pause briefly between steps.",
+        response_format: "mp3",
+      }),
+    },
+    AUDIO_TIMEOUT_MS,
+  );
+  if (!response.ok) {
+    return jsonResponse({
+      error: "Speech generation failed.",
+      details: (await response.text()).slice(0, 500),
+    }, response.status);
+  }
+  return new Response(await response.arrayBuffer(), {
+    status: 200,
+    headers: {
+      "Content-Type": "audio/mpeg",
+      "Cache-Control": "no-store",
+      "X-AI-Generated-Voice": "true",
+      "Access-Control-Allow-Origin": "*",
+    },
+  });
+}
+
 function hasBalancedBraces(input: string): boolean {
   let depth = 0;
   for (const character of input) {
@@ -204,6 +249,7 @@ function hasFalseNumericEquality(step: string): boolean {
 }
 
 function isValidMathOnlyStep(step: string): boolean {
+  // Keep accidental prose off the external math board.
   const normalized = step.trim();
   if (!normalized || normalized.length > 160 || !hasBalancedBraces(normalized)) return false;
   if (normalized.includes("$") || normalized.includes("...") || normalized.includes(",")) return false;
@@ -323,6 +369,8 @@ ${studentQuestion ? `- Student's spoken question: ${JSON.stringify(studentQuesti
 
 Analyze the visible work as one problem. Find the first incorrect transition, but do not over-interrupt if confidence is low. Use the student's past mistakes only when they match evidence in this image.
 ${studentQuestion ? "Answer the student's spoken question about the visible work with one concise guided hint. Do not ignore the question." : ""}
+
+${OPTIMIZED_TUTOR_INSTRUCTIONS}
 
 Hard rules:
 - Never reveal the final answer.
@@ -485,8 +533,14 @@ Deno.serve(async (req) => {
     return await logSession(body);
   }
 
+  if (body.mode === "speech") {
+    return await generateSpeech(openaiKey, body);
+  }
+
   if (body.mode !== "observe_work") {
-    return jsonResponse({ error: 'Unsupported mode. Use "observe_work" or "log_session".' }, 400);
+    return jsonResponse({
+      error: 'Unsupported mode. Use "observe_work", "log_session", or "speech".',
+    }, 400);
   }
 
   const imageBase64 = typeof body.image_base64 === "string" ? body.image_base64.trim() : "";
