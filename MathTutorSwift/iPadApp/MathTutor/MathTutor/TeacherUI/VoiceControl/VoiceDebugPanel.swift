@@ -7,8 +7,6 @@ struct VoiceDebugPanel: View {
         .startSession,
         .enterTeachMode,
         .returnToWork,
-        .pause,
-        .resume,
         .askQuestion,
         .checkWork,
         .hearingTest,

@@ -14,7 +14,7 @@ OUTPUT = ROOT / "supabase/functions/tutor/optimized_instructions.ts"
 
 
 class TutorReply(dspy.Signature):
-    """Give one concise, guided math-tutoring response without revealing the final answer."""
+    """Give a clear 2-5 sentence math explanation and one guided next step without revealing the final answer."""
 
     student_context: str = dspy.InputField()
     visible_work: str = dspy.InputField()
@@ -67,7 +67,7 @@ def main():
     if not api_key:
         raise SystemExit("OPENAI_API_KEY is missing from the repository .env")
 
-    student_model = os.environ.get("TUTOR_MODEL", "openai/gpt-5.4-mini")
+    student_model = os.environ.get("TUTOR_MODEL", "openai/gpt-5.4")
     reflection_model = os.environ.get("REFLECTION_MODEL", "openai/gpt-5.5")
     dspy.configure(lm=dspy.LM(student_model, api_key=api_key))
     judge_lm = dspy.LM(reflection_model, api_key=api_key)

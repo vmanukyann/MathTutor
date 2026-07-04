@@ -156,12 +156,21 @@ private final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegat
             return
         }
 
-        guard let data = photo.fileDataRepresentation() else {
+        guard
+            let data = photo.fileDataRepresentation(),
+            let image = UIImage(data: data)
+        else {
             completion(.failure(CameraError.emptyFrame))
             return
         }
 
-        completion(.success(data))
+        let maximumSize = CGSize(width: 1_600, height: 1_600)
+        let resized = image.preparingThumbnail(of: maximumSize) ?? image
+        guard let compressed = resized.jpegData(compressionQuality: 0.72) else {
+            completion(.failure(CameraError.emptyFrame))
+            return
+        }
+        completion(.success(compressed))
     }
 }
 

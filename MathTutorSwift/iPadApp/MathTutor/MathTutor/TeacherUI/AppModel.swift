@@ -8,6 +8,7 @@ final class AppModel: ObservableObject {
 
     enum Route {
         case studentPicker
+        case preparingSession(StudentProfile)
         case liveSession(StudentProfile)
         case reflection(TutoringSession)
         case admin
@@ -19,6 +20,7 @@ final class AppModel: ObservableObject {
     @Published var standController = StandController()
     @Published var voiceRecognizer = VoiceCommandRecognizer()
     @Published var externalDisplay = ExternalDisplayState()
+    @Published var voiceTutor = VoiceTutor()
 
     let voiceRouter = VoiceCommandRouter()
     let externalDisplayController = ExternalDisplayController()
@@ -54,6 +56,11 @@ final class AppModel: ObservableObject {
     }
 
     func select(_ student: StudentProfile) {
+        route = voiceTutor.isReady ? .liveSession(student) : .preparingSession(student)
+    }
+
+    func beginPreparedSession(for student: StudentProfile) {
+        guard voiceTutor.isReady else { return }
         route = .liveSession(student)
     }
 

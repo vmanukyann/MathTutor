@@ -9,11 +9,14 @@ struct RootView: View {
             switch appModel.route {
             case .studentPicker:
                 StudentPickerView()
+            case .preparingSession(let student):
+                VoiceLoadingView(student: student)
             case .liveSession(let student):
                 LiveTutorSessionView(
                     student: student,
                     standController: appModel.standController,
-                    voiceRecognizer: appModel.voiceRecognizer
+                    voiceRecognizer: appModel.voiceRecognizer,
+                    voice: appModel.voiceTutor
                 )
             case .reflection(let session):
                 ReflectionView(session: session)

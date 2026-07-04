@@ -28,6 +28,17 @@ struct StudentPickerView: View {
                         .foregroundStyle(MTTheme.chalkboardGreen)
                         .accessibilityAddTraits(.isHeader)
 
+                    Label(
+                        appModel.voiceTutor.voiceStatus,
+                        systemImage: appModel.voiceTutor.isReady
+                            ? "checkmark.circle.fill"
+                            : "arrow.down.circle"
+                    )
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(
+                        appModel.voiceTutor.isReady ? MTTheme.labGreen : MTTheme.secondaryInk
+                    )
+
                     VStack(spacing: 10) {
                         if appModel.students.isEmpty {
                             emptyStudentButton
@@ -129,7 +140,6 @@ struct StudentPickerView: View {
             command,
             in: VoiceRouteContext(
                 location: .studentPicker,
-                sessionStatus: nil,
                 canEnterTeachMode: false,
                 holderControlsActive: false
             )

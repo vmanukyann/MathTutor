@@ -8,13 +8,15 @@ struct LiveTutorSessionView: View {
     let student: StudentProfile
 
     @StateObject private var camera = CameraObservationService()
-    @StateObject private var voice: VoiceTutor
+    @ObservedObject private var voice: VoiceTutor
     @ObservedObject private var standController: StandController
     @ObservedObject private var voiceRecognizer: VoiceCommandRecognizer
 
     @State private var session: TutoringSession
     @State private var status: SessionStatus = .watching
     @State private var latestHint = "Place the iPad above the page. I will watch quietly until you ask me to check."
+    @State private var latestHintPresentation: HintPresentation?
+    @State private var latestSpokenHint: String?
     @State private var latestObservation: TutorObservation?
     @State private var errorMessage: String?
     @State private var checkFailure: CheckFailure?
@@ -36,12 +38,13 @@ struct LiveTutorSessionView: View {
     init(
         student: StudentProfile,
         standController: StandController,
-        voiceRecognizer: VoiceCommandRecognizer
+        voiceRecognizer: VoiceCommandRecognizer,
+        voice: VoiceTutor
     ) {
         self.student = student
         _standController = ObservedObject(wrappedValue: standController)
         _voiceRecognizer = ObservedObject(wrappedValue: voiceRecognizer)
-        _voice = StateObject(wrappedValue: VoiceTutor(configuration: AppSecrets.supabase))
+        _voice = ObservedObject(wrappedValue: voice)
         _session = State(initialValue: TutoringSession(student: student))
     }
 
@@ -194,6 +197,15 @@ struct LiveTutorSessionView: View {
 
     private var tutorDock: some View {
         VStack(spacing: 8) {
+            if !voice.isReady {
+                Text(voice.voiceStatus)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(MTTheme.deepBlackGreen)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(MTTheme.notebookPaper.opacity(0.96), in: Capsule())
+            }
+
             if shouldShowHintNote {
                 minimalHintNote
             } else if !isTeachMode {
@@ -278,7 +290,7 @@ struct LiveTutorSessionView: View {
                         .frame(minWidth: 220)
                 }
                 .buttonStyle(MTLabeledControlButton(fill: MTTheme.chalkboardGreen, isFilled: true))
-                .disabled(status == .thinking || status == .paused)
+                .disabled(status == .thinking)
                 .accessibilityLabel(status == .thinking ? "Checking work" : "Check work")
 
                 HStack(spacing: 8) {
@@ -323,15 +335,7 @@ struct LiveTutorSessionView: View {
                     #endif
 
                     Button {
-                        togglePause()
-                    } label: {
-                        Label(status == .paused ? "Resume" : "Pause", systemImage: status == .paused ? "play.fill" : "pause.fill")
-                    }
-                    .buttonStyle(MTLabeledControlButton(tint: MTTheme.graphiteInk))
-                    .accessibilityLabel(status == .paused ? "Resume watching" : "Pause watching")
-
-                    Button {
-                        voice.speak(latestHint)
+                        speakCurrentHint()
                     } label: {
                         Label("Repeat", systemImage: "speaker.wave.2")
                     }
@@ -389,7 +393,14 @@ struct LiveTutorSessionView: View {
                     .font(.headline.weight(.semibold))
                     .foregroundStyle(hintTint)
 
-                TutorHintView(content: visibleHint)
+                if let presentation = visibleHintPresentation {
+                    CompactTutorHintView(
+                        explanation: presentation.explanation,
+                        action: presentation.action
+                    )
+                } else {
+                    TutorHintView(content: visibleHint)
+                }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
@@ -464,6 +475,17 @@ struct LiveTutorSessionView: View {
         return latestHint
     }
 
+    private var visibleHintPresentation: HintPresentation? {
+        guard errorMessage == nil,
+              standController.state.lastError == nil,
+              airPlayMessage == nil,
+              let latestHintPresentation,
+              latestHint == latestHintPresentation.combinedText else {
+            return nil
+        }
+        return latestHintPresentation
+    }
+
     private var hintIcon: String {
         if errorMessage != nil || standController.state.lastError != nil {
             return "exclamationmark.triangle"
@@ -507,8 +529,6 @@ struct LiveTutorSessionView: View {
             return "Checking"
         case .hintReady:
             return "Hint ready"
-        case .paused:
-            return "Paused"
         }
     }
 
@@ -524,8 +544,6 @@ struct LiveTutorSessionView: View {
             return "hourglass"
         case .hintReady:
             return "lightbulb"
-        case .paused:
-            return "pause.fill"
         }
     }
 
@@ -541,8 +559,6 @@ struct LiveTutorSessionView: View {
             return MTTheme.chemicalGold
         case .hintReady:
             return MTTheme.chalkboardGreen
-        case .paused:
-            return MTTheme.disabledGray
         }
     }
 
@@ -563,8 +579,6 @@ struct LiveTutorSessionView: View {
             return "Hold still while MathTutor checks this step."
         case .hintReady:
             return "Read the hint, then tap Show Step or Mark Fixed."
-        case .paused:
-            return "Paused. Tap Resume to scan again."
         }
     }
 
@@ -575,7 +589,6 @@ struct LiveTutorSessionView: View {
     private var voiceRouteContext: VoiceRouteContext {
         VoiceRouteContext(
             location: isTeachMode ? .teachMode : .liveSession,
-            sessionStatus: status,
             canEnterTeachMode: canRequestTeachMode,
             holderControlsActive: true
         )
@@ -615,7 +628,7 @@ struct LiveTutorSessionView: View {
     }
 
     private func checkWork(studentQuestion: String? = nil) async -> Bool {
-        guard status != .paused, status != .thinking else { return false }
+        guard status != .thinking else { return false }
         guard Date().timeIntervalSince(lastCheckRequest) >= checkWorkCooldown else { return false }
 
         let checkID = UUID()
@@ -626,12 +639,14 @@ struct LiveTutorSessionView: View {
         checkFailure = nil
         airPlayMessage = nil
         studentConfused = false
+        latestHintPresentation = nil
+        latestSpokenHint = nil
         latestHint = "Checking."
         voice.speak(latestHint)
 
         do {
             let imageData = try await camera.captureFrame()
-            guard activeCheckID == checkID, status != .paused else { return false }
+            guard activeCheckID == checkID else { return false }
             let request = TutorObservationRequest(
                 imageBase64: imageData.base64EncodedString(),
                 student: student,
@@ -640,8 +655,14 @@ struct LiveTutorSessionView: View {
                 studentQuestion: studentQuestion
             )
             var observation = try await tutorClient.observeWork(request)
-            guard activeCheckID == checkID, status != .paused else { return false }
-            observation.hint = policy.sanitizedHint(observation.hint)
+            guard activeCheckID == checkID else { return false }
+            let sanitizedHint = policy.sanitizedHint(observation.hint)
+            if sanitizedHint != observation.hint {
+                observation.hintExplanation = nil
+                observation.hintAction = nil
+                observation.spokenHint = ""
+            }
+            observation.hint = sanitizedHint
 
             latestObservation = observation
             status = .hintReady
@@ -650,12 +671,19 @@ struct LiveTutorSessionView: View {
                 latestHint = "I could not read a clear step yet. Try lining up the paper."
                 checkFailure = .couldNotRead
             } else if observation.mistakeDetected {
-                let opening = policy.personalizedOpening(
-                    student: student,
-                    misconception: observation.misconceptionType
+                let presentation = SpokenHintPolicy.presentation(
+                    explanation: observation.hintExplanation,
+                    action: observation.hintAction,
+                    legacyHint: observation.hint
                 )
-                latestHint = "\(opening). \(observation.hint)"
+                latestHintPresentation = presentation
+                latestSpokenHint = SpokenHintPolicy.playbackText(
+                    spokenHint: observation.spokenHint,
+                    presentation: presentation
+                )
+                latestHint = presentation.combinedText
             } else {
+                latestSpokenHint = nil
                 latestHint = "I do not see a clear issue yet."
             }
 
@@ -673,7 +701,7 @@ struct LiveTutorSessionView: View {
             activeCheckID = nil
             return true
         } catch {
-            guard activeCheckID == checkID, status != .paused else { return false }
+            guard activeCheckID == checkID else { return false }
             if error is CameraError {
                 checkFailure = .couldNotRead
                 latestHint = "I could not check it yet. Try lining up the paper."
@@ -681,6 +709,8 @@ struct LiveTutorSessionView: View {
                 checkFailure = .backend
                 latestHint = "I could not check it yet. Try again in a moment."
             }
+            latestHintPresentation = nil
+            latestSpokenHint = nil
             errorMessage = latestHint
             status = .watching
             voice.speak(latestHint)
@@ -702,7 +732,7 @@ struct LiveTutorSessionView: View {
         case .nextStep, .differentWay:
             advanceTeachModeStep()
         case .repeatHint:
-            voice.speak(latestHint)
+            speakCurrentHint()
         case .askQuestion:
             handleVoiceQuestion()
         case .checkWork:
@@ -718,14 +748,6 @@ struct LiveTutorSessionView: View {
             markSelfCorrected()
         case .endSession:
             endSession()
-        case .pauseSession:
-            if status != .paused {
-                togglePause()
-            }
-        case .resumeSession:
-            if status == .paused {
-                togglePause()
-            }
         case .emergencyStop:
             latestHint = "Holder stopped."
         case .startSession, .ignore(_):
@@ -765,7 +787,6 @@ struct LiveTutorSessionView: View {
             voice.speak(latestHint)
         } else {
             isTeachMode = true
-            status = .paused
             latestHint = "No TV screen is connected. Showing it on the iPad."
             voice.speak(latestHint)
             standController.send(.teachMode)
@@ -814,7 +835,6 @@ struct LiveTutorSessionView: View {
         lastTeachModeRequest = Date()
         teachModeVariant = 0
         isTeachMode = true
-        status = .paused
         if appModel.externalDisplay.isConnected {
             latestHint = "Teach Mode is on the display."
             appModel.showExternalTeachMode(student: student, lines: teachModeLines)
@@ -836,6 +856,22 @@ struct LiveTutorSessionView: View {
     }
 
     private func speakHintWithDisplayGuidance() {
+        speakCurrentHint()
+    }
+
+    private func speakCurrentHint() {
+        if status == .hintReady,
+           checkFailure == nil,
+           let presentation = latestHintPresentation,
+           latestHint == presentation.combinedText {
+            voice.speak(
+                latestSpokenHint ?? SpokenHintPolicy.playbackText(
+                    spokenHint: nil,
+                    presentation: presentation
+                )
+            )
+            return
+        }
         voice.speak(latestHint)
     }
 
@@ -859,23 +895,6 @@ struct LiveTutorSessionView: View {
         appModel.clearExternalTeachMode()
         latestHint = "Continue from the corrected step."
         voice.speak(latestHint)
-    }
-
-    private func togglePause() {
-        voice.stop()
-        switch status {
-        case .paused:
-            status = .watching
-            latestHint = "Watching again."
-            voice.speak(latestHint)
-        case .watching, .hintReady:
-            status = .paused
-            latestHint = "Paused."
-        case .thinking:
-            activeCheckID = nil
-            status = .paused
-            latestHint = "Paused."
-        }
     }
 
     private func endSession() {

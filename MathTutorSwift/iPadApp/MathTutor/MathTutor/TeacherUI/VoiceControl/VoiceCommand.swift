@@ -14,8 +14,6 @@ enum VoiceCommand: String, CaseIterable, Identifiable, Sendable {
     case displayOnScreen
     case markCorrected
     case endSession
-    case pause
-    case resume
     case emergencyStop
     case confirmUnderstood
     case unknown
@@ -37,8 +35,6 @@ enum VoiceCommand: String, CaseIterable, Identifiable, Sendable {
         case .displayOnScreen: "Display on screen"
         case .markCorrected: "Mark corrected"
         case .endSession: "End session"
-        case .pause: "Pause"
-        case .resume: "Resume"
         case .emergencyStop: "Emergency stop"
         case .confirmUnderstood: "Understood"
         case .unknown: "Unknown"
@@ -60,8 +56,6 @@ enum VoiceCommand: String, CaseIterable, Identifiable, Sendable {
         case .displayOnScreen: "rectangle.on.rectangle"
         case .markCorrected: "checkmark.circle"
         case .endSession: "xmark"
-        case .pause: "pause.fill"
-        case .resume: "play.fill"
         case .emergencyStop: "stop.fill"
         case .confirmUnderstood: "checkmark"
         case .unknown: "mic"
@@ -115,10 +109,6 @@ enum VoiceCommandParser {
             command = .repeatHint
         } else if containsAny(normalized, differentWayPhrases) {
             command = .differentWay
-        } else if containsAny(normalized, pausePhrases) {
-            command = .pause
-        } else if containsAny(normalized, resumePhrases) {
-            command = .resume
         } else if containsAny(normalized, confirmationPhrases) {
             command = .confirmUnderstood
         } else if allowGenericQuestion, isLikelyQuestion(normalized) {
@@ -300,21 +290,6 @@ enum VoiceCommandParser {
         "finish the session",
         "im done",
         "i am done"
-    ]
-
-    private static let pausePhrases = [
-        "pause",
-        "pause it",
-        "stop",
-        "stop talking",
-        "stop explaining",
-        "stop listening",
-        "be quiet"
-    ]
-
-    private static let resumePhrases = [
-        "resume",
-        "keep going"
     ]
 
     private static let emergencyStopPhrases = [

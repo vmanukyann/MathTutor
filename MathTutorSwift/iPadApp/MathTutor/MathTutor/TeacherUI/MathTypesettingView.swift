@@ -16,7 +16,7 @@ struct LaTeXMathView: UIViewRepresentable {
     }
 
     func updateUIView(_ label: MTMathUILabel, context: Context) {
-        let expression = LaTeXNormalizer.expression(latex)
+        let expression = LaTeXNormalizer.renderableExpression(latex)
         label.latex = isBold ? "\\mathbf{\(expression)}" : expression
         label.font = MTFontManager().font(withName: MathFont.latinModernFont.rawValue, size: fontSize)
         label.textColor = color
@@ -49,25 +49,61 @@ struct LaTeXMathView: UIViewRepresentable {
     }
 }
 
+struct CompactTutorHintView: View {
+    let explanation: String
+    let action: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            if explanation.contains("\\(") {
+                TutorHintView(content: explanation)
+            } else {
+                Text(explanation)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(MTTheme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Divider()
+                .overlay(MTTheme.chemicalGold.opacity(0.45))
+
+            HStack(alignment: .top, spacing: 9) {
+                Text("TRY")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(MTTheme.deepBlackGreen)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(MTTheme.chemicalGold.opacity(0.32), in: Capsule())
+
+                TutorHintView(content: action)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(explanation) Try: \(action)")
+    }
+}
+
 struct TutorHintView: View {
     let content: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(Array(LaTeXNormalizer.segments(in: content).enumerated()), id: \.offset) { _, segment in
-                switch segment {
-                case .prose(let text):
-                    Text(text)
-                        .font(.callout.weight(.medium))
+        HintFlowLayout(horizontalSpacing: 4, verticalSpacing: 7) {
+            ForEach(Array(LaTeXNormalizer.inlineTokens(in: content).enumerated()), id: \.offset) { _, token in
+                switch token {
+                case .word(let word):
+                    Text(word)
+                        .font(.body.weight(.medium))
                         .foregroundStyle(MTTheme.ink)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .fixedSize()
                 case .math(let latex):
-                    LaTeXMathView(latex: latex, fontSize: 21, alignment: .left)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(10)
+                    InlineLaTeXMathView(latex: latex)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 4)
                         .background(MTTheme.notebookPaper)
+                        .clipShape(RoundedRectangle(cornerRadius: 7))
                         .overlay {
-                            RoundedRectangle(cornerRadius: MTTheme.compactRadius)
+                            RoundedRectangle(cornerRadius: 7)
                                 .stroke(MTTheme.gridLine, lineWidth: 1)
                         }
                         .accessibilityLabel(latex)
@@ -75,6 +111,99 @@ struct TutorHintView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct InlineLaTeXMathView: UIViewRepresentable {
+    let latex: String
+
+    func makeUIView(context: Context) -> MTMathUILabel {
+        let label = MTMathUILabel()
+        label.backgroundColor = .clear
+        label.labelMode = .text
+        label.contentInsets = .zero
+        return label
+    }
+
+    func updateUIView(_ label: MTMathUILabel, context: Context) {
+        label.latex = LaTeXNormalizer.renderableExpression(latex)
+        label.font = MTFontManager().font(
+            withName: MathFont.latinModernFont.rawValue,
+            size: 18
+        )
+        label.textColor = UIColor(MTTheme.deepBlackGreen)
+        label.labelMode = .text
+        label.displayErrorInline = false
+        label.invalidateIntrinsicContentSize()
+    }
+
+    func sizeThatFits(
+        _ proposal: ProposedViewSize,
+        uiView: MTMathUILabel,
+        context: Context
+    ) -> CGSize? {
+        let intrinsic = uiView.intrinsicContentSize
+        let estimatedWidth = CGFloat(max(LaTeXNormalizer.renderableExpression(latex).count, 1)) * 10
+        return CGSize(
+            width: max(intrinsic.width, estimatedWidth),
+            height: max(intrinsic.height, 24)
+        )
+    }
+}
+
+private struct HintFlowLayout: Layout {
+    let horizontalSpacing: CGFloat
+    let verticalSpacing: CGFloat
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGSize {
+        layout(subviews: subviews, width: proposal.width ?? 600).size
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) {
+        let result = layout(subviews: subviews, width: bounds.width)
+        for (index, point) in result.points.enumerated() {
+            subviews[index].place(
+                at: CGPoint(x: bounds.minX + point.x, y: bounds.minY + point.y),
+                anchor: .topLeading,
+                proposal: .unspecified
+            )
+        }
+    }
+
+    private func layout(
+        subviews: Subviews,
+        width: CGFloat
+    ) -> (size: CGSize, points: [CGPoint]) {
+        var points: [CGPoint] = []
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var lineHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > width {
+                x = 0
+                y += lineHeight + verticalSpacing
+                lineHeight = 0
+            }
+            points.append(CGPoint(x: x, y: y))
+            x += size.width + horizontalSpacing
+            lineHeight = max(lineHeight, size.height)
+        }
+
+        return (
+            CGSize(width: width, height: y + lineHeight),
+            points
+        )
     }
 }
 
@@ -116,7 +245,60 @@ enum TutorContentSegment: Equatable {
     case math(String)
 }
 
+enum TutorInlineToken: Equatable {
+    case word(String)
+    case math(String)
+}
+
 enum LaTeXNormalizer {
+    static func renderableExpression(_ source: String) -> String {
+        let normalized = expression(source)
+        var error: NSError?
+        if MTMathListBuilder.build(fromString: normalized, error: &error) != nil,
+           error == nil {
+            return normalized
+        }
+
+        var fallback = normalized
+            .replacingOccurrences(
+                of: #"\\(?:dfrac|tfrac|frac)\{([^{}]+)\}\{([^{}]+)\}"#,
+                with: #"($1)/($2)"#,
+                options: .regularExpression
+            )
+            .replacingOccurrences(
+                of: #"\\sqrt\{([^{}]+)\}"#,
+                with: #"sqrt($1)"#,
+                options: .regularExpression
+            )
+            .replacingOccurrences(of: "\\cdot", with: "·")
+            .replacingOccurrences(of: "\\times", with: "×")
+            .replacingOccurrences(of: "\\div", with: "÷")
+            .replacingOccurrences(of: "\\neq", with: "≠")
+            .replacingOccurrences(of: "\\leq", with: "≤")
+            .replacingOccurrences(of: "\\geq", with: "≥")
+            .replacingOccurrences(of: "\\pm", with: "±")
+            .replacingOccurrences(
+                of: #"\\[A-Za-z]+"#,
+                with: "",
+                options: .regularExpression
+            )
+            .replacingOccurrences(of: "{", with: "(")
+            .replacingOccurrences(of: "}", with: ")")
+
+        error = nil
+        if MTMathListBuilder.build(fromString: fallback, error: &error) != nil,
+           error == nil {
+            return fallback
+        }
+
+        fallback = fallback.replacingOccurrences(
+            of: #"[^A-Za-z0-9+\-*/=().,^ ×÷·≠≤≥±]"#,
+            with: "",
+            options: .regularExpression
+        )
+        return fallback.isEmpty ? "?" : fallback
+    }
+
     static func expression(_ source: String) -> String {
         var result = repairJSONEscapes(in: source)
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -169,6 +351,52 @@ enum LaTeXNormalizer {
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    static func isRenderableInlineExpression(_ source: String) -> Bool {
+        let normalized = expression(source)
+        guard !normalized.isEmpty,
+              bracesAreBalanced(in: normalized),
+              normalized.range(of: #"\{\s*\}"#, options: .regularExpression) == nil,
+              normalized.range(of: #"\^\s*\{\s*\}"#, options: .regularExpression) == nil else {
+            return false
+        }
+
+        let allowedCommands = Set([
+            "cdot", "div", "frac", "geq", "leq", "neq", "pm", "sqrt", "times"
+        ])
+        guard let commandRegex = try? NSRegularExpression(pattern: #"\\([A-Za-z]+)"#) else {
+            return false
+        }
+        let range = NSRange(normalized.startIndex..<normalized.endIndex, in: normalized)
+        let commands: [String] = commandRegex.matches(
+            in: normalized,
+            range: range
+        ).compactMap { match -> String? in
+            guard let commandRange = Range(match.range(at: 1), in: normalized) else {
+                return nil
+            }
+            return String(normalized[commandRange])
+        }
+        guard commands.allSatisfy(allowedCommands.contains) else { return false }
+
+        let visibleContent = normalized
+            .replacingOccurrences(
+                of: #"\\[A-Za-z]+"#,
+                with: "",
+                options: .regularExpression
+            )
+            .replacingOccurrences(
+                of: #"[{}\s^_()+\-*/=.,]"#,
+                with: "",
+                options: .regularExpression
+            )
+        guard visibleContent.range(of: #"[A-Za-z0-9]"#, options: .regularExpression) != nil else {
+            return false
+        }
+
+        var error: NSError?
+        return MTMathListBuilder.build(fromString: normalized, error: &error) != nil && error == nil
+    }
+
     static func isMathOnlyExpression(_ source: String) -> Bool {
         let normalized = expression(source)
         let forbiddenWords = [
@@ -197,6 +425,8 @@ enum LaTeXNormalizer {
               !lowercased.contains("\\operatorname"),
               !normalized.contains("..."),
               !normalized.contains(","),
+              normalized.range(of: #"\{\s*\}"#, options: .regularExpression) == nil,
+              normalized.range(of: #"\^\s*\{\s*\}"#, options: .regularExpression) == nil,
               normalized.range(
                 of: #"^\s*[A-Za-z]\s*=\s*(?![A-Za-z](?:\s|$))"#,
                 options: .regularExpression
@@ -239,7 +469,7 @@ enum LaTeXNormalizer {
     }
 
     static func segments(in source: String) -> [TutorContentSegment] {
-        let pattern = #"\\\((.+?)\\\)|\\\[(.+?)\\\]|\$\$(.+?)\$\$|\$(.+?)\$"#
+        let pattern = #"\\\((.*?)\\\)|\\\[(.*?)\\\]|\$\$(.*?)\$\$|\$(.*?)\$"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else {
             return [.prose(source)]
         }
@@ -262,6 +492,21 @@ enum LaTeXNormalizer {
 
         appendProse(String(source[cursor...]), to: &segments)
         return segments.isEmpty ? [.prose(source)] : segments
+    }
+
+    static func inlineTokens(in source: String) -> [TutorInlineToken] {
+        segments(in: source).flatMap { segment in
+            switch segment {
+            case .prose(let text):
+                return text
+                    .split(whereSeparator: \.isWhitespace)
+                    .map { TutorInlineToken.word(String($0)) }
+            case .math(let latex):
+                return isRenderableInlineExpression(latex)
+                    ? [.math(latex)]
+                    : [.word("the marked value")]
+            }
+        }
     }
 
     private static func appendProse(_ text: String, to segments: inout [TutorContentSegment]) {

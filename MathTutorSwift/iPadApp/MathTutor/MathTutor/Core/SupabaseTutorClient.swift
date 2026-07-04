@@ -127,28 +127,6 @@ public final class SupabaseTutorClient: TutorBrainServicing, @unchecked Sendable
         }
     }
 
-    public func generateSpeech(_ text: String) async throws -> Data {
-        let endpoint = configuration.url
-            .appendingPathComponent("functions")
-            .appendingPathComponent("v1")
-            .appendingPathComponent("tutor")
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.setValue(configuration.anonKey, forHTTPHeaderField: "apikey")
-        request.setValue("Bearer \(configuration.anonKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try encoder.encode(EdgeSpeechRequest(text: text))
-
-        let (data, response) = try await urlSession.data(for: request)
-        guard let http = response as? HTTPURLResponse,
-              (200..<300).contains(http.statusCode)
-        else {
-            throw TutorClientError.edgeFunctionFailed(
-                String(data: data, encoding: .utf8) ?? "Unknown error"
-            )
-        }
-        return data
-    }
 }
 
 public enum TutorClientError: Error, LocalizedError, Sendable {
@@ -167,11 +145,6 @@ private struct EdgeObservationRequest: Encodable {
     var imageBase64: String
     var student: EdgeStudentContext
     var session: EdgeSessionContext
-}
-
-private struct EdgeSpeechRequest: Encodable {
-    var mode = "speech"
-    var text: String
 }
 
 private struct EdgeStudentContext: Encodable {

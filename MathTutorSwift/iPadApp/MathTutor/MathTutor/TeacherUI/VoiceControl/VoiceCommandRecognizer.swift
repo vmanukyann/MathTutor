@@ -127,9 +127,13 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
         guard isTutorSpeaking != speaking else { return }
         isTutorSpeaking = speaking
 
-        if !speaking, shouldKeepListening {
-            // Start with a clean transcript so the tutor's own speech cannot become
-            // the next student command.
+        if speaking {
+            restartTask?.cancel()
+            restartTask = nil
+            stopRecognitionSession()
+            snapshot.currentVoiceMode = .processing
+        } else if shouldKeepListening {
+            // Restart with a clean transcript after the speaker tail has cleared.
             restartRecognitionSoon()
         }
     }
@@ -176,8 +180,6 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
             "display this on the screen",
             "show me how to do this",
             "show me a hint",
-            "pause",
-            "resume",
             "repeat this",
             "mark fixed",
             "end session"
@@ -258,7 +260,7 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
                 confidence: snapshot.confidence,
                 allowGenericQuestion: result.isFinal
             ),
-               (!isTutorSpeaking || match.command == .pause || match.command == .emergencyStop),
+               !isTutorSpeaking,
                shouldEmit(match) {
                 print("MathTutorVoice command=\(match.command.rawValue) phrase=\(match.phrase)")
                 snapshot.lastRecognizedCommand = match.command
@@ -296,15 +298,18 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
 
     private func restartRecognitionSoon() {
         stopRecognitionSession()
-        scheduleRecognitionRestart(after: 0.35)
+        scheduleRecognitionRestart(after: 0.45)
     }
 
     private func scheduleRecognitionRestart(after delay: TimeInterval = 0.8) {
-        guard shouldKeepListening else { return }
+        guard shouldKeepListening, !isTutorSpeaking else { return }
         restartTask?.cancel()
         restartTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(delay))
-            guard let self, !Task.isCancelled, shouldKeepListening else { return }
+            guard let self,
+                  !Task.isCancelled,
+                  shouldKeepListening,
+                  !isTutorSpeaking else { return }
             startRecognitionSession()
         }
     }

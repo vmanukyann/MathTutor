@@ -1,5 +1,6 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { OPTIMIZED_TUTOR_INSTRUCTIONS } from "./optimized_instructions.ts";
+import { buildCompactHint } from "./hint_utils.ts";
 
 type TutorObservation = {
   mistake_detected: boolean;
@@ -16,6 +17,9 @@ type TutorObservation = {
     | "unclear_work";
   hint_level: number;
   hint: string;
+  spoken_hint: string;
+  hint_explanation: string;
+  hint_action: string;
   teacher_note: string;
   work_summary: string;
   teach_steps?: string[];
@@ -29,7 +33,6 @@ const JSON_HEADERS = {
 };
 
 const OBSERVE_TIMEOUT_MS = 35_000;
-const AUDIO_TIMEOUT_MS = 45_000;
 const FORBIDDEN_MATH_WORDS = [
   "something",
   "unknown",
@@ -78,7 +81,9 @@ const OBSERVATION_SCHEMA = {
       ],
     },
     hint_level: { type: "integer", enum: [1, 2, 3] },
-    hint: { type: "string" },
+    hint_explanation: { type: "string" },
+    hint_action: { type: "string" },
+    spoken_hint: { type: "string" },
     teacher_note: { type: "string" },
     work_summary: { type: "string" },
     teach_steps: {
@@ -92,7 +97,9 @@ const OBSERVATION_SCHEMA = {
     "confidence",
     "misconception_type",
     "hint_level",
-    "hint",
+    "hint_explanation",
+    "hint_action",
+    "spoken_hint",
     "teacher_note",
     "work_summary",
     "teach_steps",
@@ -122,49 +129,6 @@ function parseResponsesText(responseJson: any): string {
     .map((part) => typeof part?.text === "string" ? part.text : "")
     .filter((text) => text.trim().length > 0)
     .join("\n");
-}
-
-async function generateSpeech(
-  openaiKey: string,
-  body: Record<string, unknown>,
-): Promise<Response> {
-  const input = typeof body.text === "string" ? body.text.trim().slice(0, 12_000) : "";
-  if (!input) return jsonResponse({ error: "Speech text is required." }, 400);
-
-  const response = await fetchWithTimeout(
-    "https://api.openai.com/v1/audio/speech",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${openaiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: Deno.env.get("OPENAI_TTS_MODEL") ?? "gpt-4o-mini-tts",
-        voice: Deno.env.get("OPENAI_TTS_VOICE") ?? "marin",
-        input,
-        instructions:
-          "Speak like a patient math tutor. Use a calm pace and pause briefly between steps.",
-        response_format: "mp3",
-      }),
-    },
-    AUDIO_TIMEOUT_MS,
-  );
-  if (!response.ok) {
-    return jsonResponse({
-      error: "Speech generation failed.",
-      details: (await response.text()).slice(0, 500),
-    }, response.status);
-  }
-  return new Response(await response.arrayBuffer(), {
-    status: 200,
-    headers: {
-      "Content-Type": "audio/mpeg",
-      "Cache-Control": "no-store",
-      "X-AI-Generated-Voice": "true",
-      "Access-Control-Allow-Origin": "*",
-    },
-  });
 }
 
 function hasBalancedBraces(input: string): boolean {
@@ -252,6 +216,7 @@ function isValidMathOnlyStep(step: string): boolean {
   // Keep accidental prose off the external math board.
   const normalized = step.trim();
   if (!normalized || normalized.length > 160 || !hasBalancedBraces(normalized)) return false;
+  if (/\{\s*\}/.test(normalized) || /\^\s*\{\s*\}/.test(normalized)) return false;
   if (normalized.includes("$") || normalized.includes("...") || normalized.includes(",")) return false;
   if (/^\s*[A-Za-z]\s*=\s*(?![A-Za-z](?:\s|$))/.test(normalized)) return false;
 
@@ -310,17 +275,23 @@ function normalizeObservation(value: unknown): TutorObservation {
     : mistakeDetected
     ? "high"
     : "medium";
+  const compactHint = buildCompactHint({
+    explanation: row.hint_explanation,
+    action: row.hint_action,
+    spokenHint: row.spoken_hint,
+    legacyHint: row.hint,
+    mistakeDetected,
+  });
 
   return {
     mistake_detected: mistakeDetected,
     confidence,
     misconception_type: misconceptionType,
     hint_level: Math.min(3, Math.max(1, Number(row.hint_level ?? 1))),
-    hint: typeof row.hint === "string" && row.hint.trim().length > 0
-      ? row.hint.trim()
-      : mistakeDetected
-      ? "Compare the first incorrect line with the line immediately before it."
-      : "The newest visible step looks consistent. Continue from there.",
+    hint: compactHint.hint,
+    spoken_hint: compactHint.spokenHint,
+    hint_explanation: compactHint.explanation,
+    hint_action: compactHint.action,
     teacher_note: typeof row.teacher_note === "string" ? row.teacher_note.trim() : "",
     work_summary: typeof row.work_summary === "string" ? row.work_summary.trim() : "",
     teach_steps: teachSteps && teachSteps.length > 0 ? teachSteps : undefined,
@@ -375,15 +346,28 @@ ${OPTIMIZED_TUTOR_INSTRUCTIONS}
 Hard rules:
 - Never reveal the final answer.
 - Never solve the full problem.
-- Give one short, specific teacher-like hint or clarifying question about the first incorrect transition.
+- Return a specific hint_explanation and one focused hint_action about the first incorrect transition.
+- hint_explanation must use 2 to 4 complete sentences. Acknowledge what is correct, identify the exact mistake, and explain the mathematical rule that applies.
+- hint_action must be one complete sentence that asks for exactly one useful next step.
+- Do not shorten a useful explanation merely to save words. Never return generic advice such as "check this step carefully" or "compare it with the previous line" without naming the actual operation or misconception.
+- spoken_hint must be a complete plain-English version of the same substantive guidance.
+- spoken_hint must summarize the same explanation and next step without LaTeX, equations, arithmetic expressions, or raw mathematical notation.
+- Make the hint concrete enough that the student understands the rule, but leave the calculation or correction for the student.
 - Name the exact visible numbers, symbols, or operation involved; do not give a generic topic reminder.
+- Refer to the displayed derivation as Step 1, Step 2, or Step 3 whenever that is less confusing than reading a dense expression aloud.
+- Do not repeat a full algebraic expression in prose merely to identify a line; say "Step 2" and explain the operation or misconception.
 - Provide at most 3 short math-only teach_steps that can be shown on a classroom display.
 - Start teach_steps at the mistaken line (or the line immediately before it), not at the beginning of the problem.
 - Copy the variables and numbers visible in the student's work. Never substitute a canned example or generic variables.
 - teach_steps must directly correct the visible mistake.
 - teach_steps should not dump a full final answer unless the visible step already contains it.
 - Write every mathematical expression in valid LaTeX.
-- In hint prose, wrap each math expression in \\( and \\), for example: "Compare \\(2(x+3)\\) with \\(2x+3\\)."
+- In hint prose, wrap every math expression inline in \\( and \\), including equations, fractions, powers, variables with coefficients, and arithmetic products.
+- Never leave raw math such as x^2, 3(x-4), 2x=10, or 1/2 unwrapped in hint prose.
+- Keep prose and inline math in the same sentence. Do not place an expression on its own line and do not use display wrappers \\[...\\], $$...$$, Markdown code, or Markdown bullets in the hint.
+- Example fields: hint_explanation is "Your first product is correct, but the outside factor must multiply both terms inside the parentheses." and hint_action is "Recheck \\(3 \\cdot (-4)\\) before rewriting Step 2."
+- For that example, spoken_hint could be "The outside factor must reach both terms. Recheck the second product before rewriting Step 2."
+- Never emit empty LaTeX wrappers or empty groups such as \\(\\), \\frac{}{2}, \\sqrt{}, or x^{}.
 - Each teach_steps item must contain only raw display LaTeX without dollar signs or prose.
 - Prefer LaTeX commands such as \\frac{a}{b}, x^{2}, \\cdot, \\neq, and \\sqrt{x}; never use Unicode superscripts or slash fractions.
 - Because the response is JSON, escape every LaTeX backslash as a JSON double backslash. For example, return "\\\\frac{1}{2}", never "\\frac{1}{2}".
@@ -404,7 +388,9 @@ Return only the requested structured object. When the image is unclear, use misc
   "confidence": "low" | "medium" | "high",
   "misconception_type": "sign_error" | "distribution" | "equation_balance" | "invalid_cancellation" | "slope_intercept" | "factoring" | "square_root" | "sat_strategy" | "unclear_work",
   "hint_level": 1 | 2 | 3,
-  "hint": "one short guided hint without the final answer",
+  "hint_explanation": "one or two specific sentences explaining the visible mistake",
+  "hint_action": "one focused next-step sentence with at most one inline LaTeX expression",
+  "spoken_hint": "a short complete spoken summary with no mathematical notation",
   "teacher_note": "brief private note for admin/research review",
   "work_summary": "brief summary of what the student appears to be doing",
   "teach_steps": ["short math-only display line", "next short math-only display line"],
@@ -533,13 +519,9 @@ Deno.serve(async (req) => {
     return await logSession(body);
   }
 
-  if (body.mode === "speech") {
-    return await generateSpeech(openaiKey, body);
-  }
-
   if (body.mode !== "observe_work") {
     return jsonResponse({
-      error: 'Unsupported mode. Use "observe_work", "log_session", or "speech".',
+      error: 'Unsupported mode. Use "observe_work" or "log_session".',
     }, 400);
   }
 
@@ -561,13 +543,18 @@ Deno.serve(async (req) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: Deno.env.get("OPENAI_OBSERVE_MODEL") ?? "gpt-4o-mini",
+          model: Deno.env.get("OPENAI_OBSERVE_MODEL") ?? "gpt-5.4",
+          reasoning: { effort: "low" },
           input: [
             {
               role: "user",
               content: [
                 { type: "input_text", text: observeWorkPrompt(student, session) },
-                { type: "input_image", image_url: `data:image/jpeg;base64,${imageBase64}` },
+                {
+                  type: "input_image",
+                  image_url: `data:image/jpeg;base64,${imageBase64}`,
+                  detail: "high",
+                },
               ],
             },
           ],
@@ -579,8 +566,7 @@ Deno.serve(async (req) => {
               schema: OBSERVATION_SCHEMA,
             },
           },
-          temperature: 0,
-          max_output_tokens: 700,
+          max_output_tokens: 900,
         }),
       },
       OBSERVE_TIMEOUT_MS,

@@ -10,7 +10,6 @@ public enum SessionStatus: String, Codable, Sendable {
     case watching
     case thinking
     case hintReady
-    case paused
 }
 
 public struct MathWorkState: Codable, Equatable, Sendable {
@@ -38,6 +37,9 @@ public struct TutorObservation: Codable, Equatable, Sendable {
     public var misconceptionType: MisconceptionType
     public var hintLevel: Int
     public var hint: String
+    public var spokenHint: String
+    public var hintExplanation: String?
+    public var hintAction: String?
     public var teacherNote: String
     public var workSummary: String
     public var teachSteps: [String]?
@@ -49,6 +51,9 @@ public struct TutorObservation: Codable, Equatable, Sendable {
         misconceptionType: MisconceptionType,
         hintLevel: Int,
         hint: String,
+        spokenHint: String = "",
+        hintExplanation: String? = nil,
+        hintAction: String? = nil,
         teacherNote: String,
         workSummary: String,
         teachSteps: [String]? = nil,
@@ -59,6 +64,9 @@ public struct TutorObservation: Codable, Equatable, Sendable {
         self.misconceptionType = misconceptionType
         self.hintLevel = min(3, max(1, hintLevel))
         self.hint = hint
+        self.spokenHint = spokenHint
+        self.hintExplanation = hintExplanation
+        self.hintAction = hintAction
         self.teacherNote = teacherNote
         self.workSummary = workSummary
         self.teachSteps = teachSteps

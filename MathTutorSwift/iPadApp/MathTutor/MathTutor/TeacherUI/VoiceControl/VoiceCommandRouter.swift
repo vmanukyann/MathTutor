@@ -10,7 +10,6 @@ enum VoiceRouteLocation: Sendable {
 
 struct VoiceRouteContext: Sendable {
     var location: VoiceRouteLocation
-    var sessionStatus: SessionStatus?
     var canEnterTeachMode: Bool
     var holderControlsActive: Bool
 }
@@ -29,8 +28,6 @@ enum VoiceRoutedAction: Equatable, Sendable {
     case displayOnScreen
     case markCorrected
     case endSession
-    case pauseSession
-    case resumeSession
     case emergencyStop
     case confirmUnderstood
     case ignore(String)
@@ -50,8 +47,6 @@ enum VoiceRoutedAction: Equatable, Sendable {
         case .displayOnScreen: "Display on screen"
         case .markCorrected: "Mark corrected"
         case .endSession: "End session"
-        case .pauseSession: "Pause session"
-        case .resumeSession: "Resume session"
         case .emergencyStop: "Emergency stop"
         case .confirmUnderstood: "Confirm understood"
         case .ignore(let reason): "Ignored: \(reason)"
@@ -119,9 +114,6 @@ struct VoiceCommandRouter: Sendable {
             guard context.location == .liveSession else {
                 return .ignore("check work requires a live session")
             }
-            guard context.sessionStatus != .thinking else {
-                return .ignore("check work is already running")
-            }
             return .checkWork
 
         case .hearingTest:
@@ -160,20 +152,6 @@ struct VoiceCommandRouter: Sendable {
             default:
                 return .ignore("end requires an active session")
             }
-
-        case .pause:
-            switch context.location {
-            case .liveSession, .teachMode:
-                return .pauseSession
-            default:
-                return .ignore("pause requires an active session")
-            }
-
-        case .resume:
-            guard context.sessionStatus == .paused else {
-                return .ignore("resume requires a paused session")
-            }
-            return .resumeSession
 
         case .confirmUnderstood:
             return context.location == .teachMode ? .confirmUnderstood : .ignore("understood is only routed from Teach Mode")

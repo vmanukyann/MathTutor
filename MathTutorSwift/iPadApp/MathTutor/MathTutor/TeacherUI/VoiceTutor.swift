@@ -1,22 +1,32 @@
 import AVFoundation
 import Combine
+import FluidAudio
 
 @MainActor
 final class VoiceTutor: NSObject, ObservableObject {
-    private let synthesizer = AVSpeechSynthesizer()
-    private let tutorClient: SupabaseTutorClient
-    private var audioPlayer: AVAudioPlayer?
-    private var speechTask: Task<Void, Never>?
-    private var currentUtterance: AVSpeechUtterance?
-    private var currentSpokenText = ""
+    @Published private(set) var voiceStatus = "Downloading the voice model…"
+    @Published private(set) var isReady = false
 
     var onSpeechStarted: (() -> Void)?
     var onSpeechFinished: (() -> Void)?
 
-    init(configuration: SupabaseConfiguration) {
-        tutorClient = SupabaseTutorClient(configuration: configuration)
+    private let manager = PocketTtsManager(precision: .int8, placement: .gpu)
+    private var clonedVoice: PocketTtsVoiceData?
+    private var player: AVAudioPlayer?
+    private var pendingText: String?
+    private var currentSpokenText = ""
+    private var synthesisTask: Task<Void, Never>?
+    private var didBeginSpeech = false
+
+    private let voiceSampleURL = URL(
+        string: "https://zydgcutdgkgjvstzrafo.supabase.co/storage/v1/object/public/tts-assets/voice.wav"
+    )!
+
+    override init() {
         super.init()
-        synthesizer.delegate = self
+        Task { [weak self] in
+            await self?.prepareVoice()
+        }
     }
 
     func speak(_ text: String) {
@@ -27,130 +37,154 @@ final class VoiceTutor: NSObject, ObservableObject {
         stop()
         currentSpokenText = preparedText
 
-        speechTask = Task { [weak self] in
+        guard isReady else {
+            pendingText = preparedText
+            return
+        }
+        synthesizeAndPlay(preparedText)
+    }
+
+    func stop() {
+        let shouldNotify = didBeginSpeech
+        didBeginSpeech = false
+        synthesisTask?.cancel()
+        synthesisTask = nil
+        player?.stop()
+        player = nil
+        pendingText = nil
+        currentSpokenText = ""
+        if isReady {
+            voiceStatus = "Your voice is ready"
+        }
+        if shouldNotify {
+            onSpeechFinished?()
+        }
+    }
+
+    private func prepareVoice() async {
+        do {
+            voiceStatus = "Downloading the native voice model…"
+            try await manager.initialize()
+
+            voiceStatus = "Preparing your recorded voice…"
+            let (temporaryURL, response) = try await URLSession.shared.download(from: voiceSampleURL)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                throw URLError(.badServerResponse)
+            }
+
+            let voiceData = try await manager.cloneVoice(from: temporaryURL)
+            clonedVoice = voiceData
+            voiceStatus = "Finishing voice preparation…"
+            _ = try await manager.synthesize(
+                text: "Let’s look at step two together. Check the operation, then try the next step.",
+                voiceData: voiceData
+            )
+
+            isReady = true
+            voiceStatus = "Your voice is ready"
+
+            if let pendingText {
+                self.pendingText = nil
+                synthesizeAndPlay(pendingText)
+            }
+        } catch {
+            voiceStatus = "Voice loading failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func synthesizeAndPlay(_ text: String) {
+        guard let clonedVoice else { return }
+        voiceStatus = "Creating speech…"
+
+        synthesisTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let data = try await tutorClient.generateSpeech(preparedText)
-                guard !Task.isCancelled, currentSpokenText == preparedText else { return }
-                try playGeneratedAudio(data)
+                let audio = try await manager.synthesize(
+                    text: text,
+                    voiceData: clonedVoice
+                )
+                try Task.checkCancellation()
+
+                let player = try AVAudioPlayer(data: audio)
+                self.player = player
+                player.delegate = self
+
+                didBeginSpeech = true
+                onSpeechStarted?()
+                configureAudioSession()
+                try await Task.sleep(for: .milliseconds(200))
+                try Task.checkCancellation()
+                guard self.player === player else { throw CancellationError() }
+
+                player.prepareToPlay()
+                voiceStatus = "Speaking…"
+                guard player.play() else {
+                    throw VoiceTutorError.playbackDidNotStart
+                }
+            } catch is CancellationError {
+                return
             } catch {
-                // The lesson should still work if the network drops.
-                guard !Task.isCancelled, currentSpokenText == preparedText else { return }
-                speakWithSystemVoice(preparedText)
+                finishSpeaking()
+                voiceStatus = "Speech failed: \(error.localizedDescription)"
             }
         }
     }
 
-    func stop() {
-        speechTask?.cancel()
-        speechTask = nil
-        audioPlayer?.stop()
-        audioPlayer = nil
-        synthesizer.stopSpeaking(at: .immediate)
-        currentUtterance = nil
-        currentSpokenText = ""
-    }
-
     private func configureAudioSession() {
         let audioSession = AVAudioSession.sharedInstance()
-        try? audioSession.setCategory(
-            .playAndRecord,
-            mode: .voiceChat,
-            options: [.defaultToSpeaker, .allowBluetoothHFP, .duckOthers]
-        )
+        try? audioSession.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
         try? audioSession.setActive(true)
-        try? audioSession.overrideOutputAudioPort(.speaker)
-    }
-
-    private func playGeneratedAudio(_ data: Data) throws {
-        configureAudioSession()
-        let player = try AVAudioPlayer(data: data)
-        player.delegate = self
-        player.prepareToPlay()
-        audioPlayer = player
-        onSpeechStarted?()
-        player.play()
-    }
-
-    private func speakWithSystemVoice(_ preparedText: String) {
-        configureAudioSession()
-        let utterance = AVSpeechUtterance(string: preparedText)
-        utterance.rate = 0.46
-        utterance.pitchMultiplier = 1.02
-        utterance.volume = 1.0
-        currentUtterance = utterance
-        onSpeechStarted?()
-        synthesizer.speak(utterance)
     }
 
     private func spokenText(from source: String) -> String {
-        // AVSpeechSynthesizer reads raw LaTeX pretty badly, so clean up the common cases.
-        var text = source
-        text = replacing(#"\\frac\{([^{}]+)\}\{([^{}]+)\}"#, in: text, with: "$1 divided by $2")
-        text = replacing(#"([A-Za-z0-9]+)\^\{2\}"#, in: text, with: "$1 squared")
-        text = replacing(#"([A-Za-z0-9]+)\^\{3\}"#, in: text, with: "$1 cubed")
-        text = replacing(#"\\sqrt\{([^{}]+)\}"#, in: text, with: "the square root of $1")
-
-        return text
-            .replacingOccurrences(of: "\\(", with: "")
-            .replacingOccurrences(of: "\\)", with: "")
-            .replacingOccurrences(of: "\\[", with: "")
-            .replacingOccurrences(of: "\\]", with: "")
-            .replacingOccurrences(of: "$", with: "")
-            .replacingOccurrences(of: "\\cdot", with: " times ")
-            .replacingOccurrences(of: "\\times", with: " times ")
-            .replacingOccurrences(of: "\\div", with: " divided by ")
-            .replacingOccurrences(of: "\\neq", with: " is not equal to ")
-            .replacingOccurrences(of: "\\leq", with: " is less than or equal to ")
-            .replacingOccurrences(of: "\\geq", with: " is greater than or equal to ")
+        source
+            .replacingOccurrences(
+                of: #"\\\(.*?\\\)|\\\[.*?\\\]|\$\$?.*?\$\$?"#,
+                with: "the marked expression",
+                options: .regularExpression
+            )
+            .replacingOccurrences(
+                of: #"\\[A-Za-z]+"#,
+                with: "",
+                options: .regularExpression
+            )
             .replacingOccurrences(of: "{", with: "")
             .replacingOccurrences(of: "}", with: "")
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func replacing(_ pattern: String, in source: String, with template: String) -> String {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return source }
-        return regex.stringByReplacingMatches(
-            in: source,
-            range: NSRange(source.startIndex..<source.endIndex, in: source),
-            withTemplate: template
-        )
+    private func finishSpeaking() {
+        let shouldNotify = didBeginSpeech
+        didBeginSpeech = false
+        player?.stop()
+        player = nil
+        synthesisTask = nil
+        currentSpokenText = ""
+        voiceStatus = "Your voice is ready"
+        if shouldNotify {
+            onSpeechFinished?()
+        }
     }
 }
 
-extension VoiceTutor: AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate {
+private enum VoiceTutorError: LocalizedError {
+    case playbackDidNotStart
+
+    var errorDescription: String? {
+        "Audio playback did not start."
+    }
+}
+
+extension VoiceTutor: AVAudioPlayerDelegate {
     nonisolated func audioPlayerDidFinishPlaying(
         _ player: AVAudioPlayer,
         successfully flag: Bool
     ) {
         Task { @MainActor [weak self] in
-            guard let self, player === audioPlayer else { return }
-            audioPlayer = nil
-            currentSpokenText = ""
-            onSpeechFinished?()
-        }
-    }
-
-    nonisolated func speechSynthesizer(
-        _ synthesizer: AVSpeechSynthesizer,
-        didFinish utterance: AVSpeechUtterance
-    ) {
-        Task { @MainActor [weak self] in
-            guard let self, utterance === currentUtterance else { return }
-            currentUtterance = nil
-            currentSpokenText = ""
-            onSpeechFinished?()
-        }
-    }
-
-    nonisolated func speechSynthesizer(
-        _ synthesizer: AVSpeechSynthesizer,
-        didCancel utterance: AVSpeechUtterance
-    ) {
-        Task { @MainActor [weak self] in
-            guard let self, utterance === currentUtterance else { return }
-            currentUtterance = nil
-            currentSpokenText = ""
-            onSpeechFinished?()
+            guard let self, player === self.player else { return }
+            finishSpeaking()
         }
     }
 }

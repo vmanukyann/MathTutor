@@ -1,75 +1,182 @@
 [
   {
-    "student_context": "Middle school; fractions; no prior misconception history.",
+    "student_context": "Grade 6; adding fractions; no prior misconception history.",
     "visible_work": "3/4 + 1/2 = 4/6",
     "student_question": "Is this right?",
-    "reference_guidance": "Identify unlike denominators and ask the student to rename one-half in fourths. Do not state the sum."
+    "reference_guidance": "Explain that the denominator names the size of each piece, so fourths and halves cannot be counted together yet. Direct attention to Step 2 and ask the student to rename one-half using fourths. Give a concrete prompt such as asking how many fourths equal one-half, but do not state the final sum."
   },
   {
-    "student_context": "Middle school; linear equations; no-answer mode.",
-    "visible_work": "2x + 5 = 17",
+    "student_context": "Grade 7; subtracting fractions; student often subtracts denominators.",
+    "visible_work": "5/6 - 1/3 = 4/3",
+    "student_question": "Why did I get this wrong?",
+    "reference_guidance": "Point out that Step 2 subtracts pieces of different sizes. Explain that both fractions need a common unit before their numerators can be compared. Ask the learner to rewrite one-third as sixths and then revisit only the numerator subtraction, without completing the answer."
+  },
+  {
+    "student_context": "Grade 7; one-step linear equations; no-answer mode.",
+    "visible_work": "x + 8 = 21",
     "student_question": "What do I do first?",
-    "reference_guidance": "Ask which inverse operation undoes plus five. Do not solve for x."
+    "reference_guidance": "Explain that the goal is to leave the variable alone while keeping the equation balanced. Refer to Step 1 and ask which inverse operation undoes adding eight. Remind the student that whatever operation is chosen must be applied to both sides, but do not calculate the resulting value."
   },
   {
-    "student_context": "Middle school; linear equations; student has reached 2x=12.",
+    "student_context": "Grade 8; two-step linear equations; student reached 2x = 12.",
     "visible_work": "2x + 5 = 17; 2x = 12; x = 24",
-    "student_question": "",
-    "reference_guidance": "Point to multiplication by two and ask which operation undoes it."
+    "student_question": "Did I finish it correctly?",
+    "reference_guidance": "Acknowledge that the move from Step 1 to Step 2 is correct. Identify Step 3 as the first incorrect transition and explain that two is multiplying the variable, so the inverse operation is needed rather than another multiplication. Ask what operation would undo multiplication by two, without giving the solved value."
   },
   {
-    "student_context": "Elementary; decimals.",
+    "student_context": "Grade 8; equations with negatives; prior sign errors.",
+    "visible_work": "-3x = 18; x = 6",
+    "student_question": "Is x positive?",
+    "reference_guidance": "Focus on the sign change between Step 1 and Step 2. Explain that dividing a positive number by a negative coefficient produces a negative result. Ask the student to predict the sign first and then redo the division, without stating the final value."
+  },
+  {
+    "student_context": "Grade 8; distributive property; first attempt.",
+    "visible_work": "3(x - 4) = 3x - 4",
+    "student_question": "What is missing?",
+    "reference_guidance": "Refer to Step 2 instead of reading the entire algebraic expression aloud. Explain that the factor outside the parentheses must multiply every term inside. Ask the student whether the negative four also received the factor of three, then invite them to correct that one part without solving anything further."
+  },
+  {
+    "student_context": "Grade 8; distributive property with a negative factor.",
+    "visible_work": "-2(x + 5) = -2x + 10",
+    "student_question": "I distributed. Why is it wrong?",
+    "reference_guidance": "Confirm that the factor was applied to both terms, then point to the sign in Step 2. Explain that a negative factor times a positive term stays negative. Ask the student to check only the second product and rewrite Step 2, without continuing the equation."
+  },
+  {
+    "student_context": "Grade 6; comparing decimals; place-value misconception.",
     "visible_work": "0.4 < 0.35 because 4 < 35",
     "student_question": "Why is this marked wrong?",
-    "reference_guidance": "Ask the learner to write 0.4 in hundredths or compare 40 cents with 35 cents."
+    "reference_guidance": "Explain that decimal digits must be compared by place value rather than as whole-number strings. Ask the learner to rewrite four tenths as forty hundredths, or imagine forty cents and thirty-five cents. Then ask which amount is larger, allowing the student to state the comparison."
   },
   {
-    "student_context": "Middle school; circle area.",
-    "visible_work": "r=5; A=5^2=25",
-    "student_question": "",
-    "reference_guidance": "Ask the student to check the circle-area formula and identify the missing factor pi."
+    "student_context": "Grade 6; multiplying decimals.",
+    "visible_work": "0.6 x 0.4 = 2.4",
+    "student_question": "Where does the decimal go?",
+    "reference_guidance": "Explain that multiplying two quantities smaller than one should produce something smaller than either factor, which is a useful reasonableness check. Ask the student to multiply six by four first and then count the total decimal places in the original factors. Do not place the decimal or state the final product for them."
   },
   {
-    "student_context": "High school; factoring.",
-    "visible_work": "x^2+7x+12",
+    "student_context": "Grade 7; percent of a quantity.",
+    "visible_work": "25% of 80 = 25 x 80",
+    "student_question": "How do I start?",
+    "reference_guidance": "Explain that a percent means a number out of one hundred and must be converted before multiplication. Refer to Step 1 and ask the student to rewrite twenty-five percent as either a fraction over one hundred or a decimal. Stop after that setup so the learner performs the multiplication."
+  },
+  {
+    "student_context": "Grade 7; proportional reasoning.",
+    "visible_work": "3 notebooks cost $6; 5 notebooks cost $8",
+    "student_question": "Does this proportion look right?",
+    "reference_guidance": "Ask the student to find the cost of one notebook from the first relationship. Explain that a proportional situation keeps the same unit rate, so Step 2 should be checked against that rate. Do not calculate the five-notebook cost; ask the student to use the unit rate to test it."
+  },
+  {
+    "student_context": "Grade 7; probability; favorable versus total outcomes.",
+    "visible_work": "3 red, 2 blue; P(red) = 3/2",
+    "student_question": "I used red over blue.",
+    "reference_guidance": "Explain that probability compares favorable outcomes with all possible outcomes, not with the unfavorable group alone. Ask how many counters there are altogether and which count belongs in the denominator. Mention that a probability greater than one is a warning sign, but do not give the corrected fraction."
+  },
+  {
+    "student_context": "Grade 7; circle area.",
+    "visible_work": "r = 5; A = 5^2 = 25",
+    "student_question": "Am I finished?",
+    "reference_guidance": "Acknowledge that the radius was squared correctly. Explain that Step 2 includes only one part of the circle-area formula and ask the student to recall the factor that accompanies the squared radius. Do not multiply or state the final area."
+  },
+  {
+    "student_context": "Grade 7; circumference versus area.",
+    "visible_work": "r = 4; C = pi x 4^2",
+    "student_question": "Which formula should I use?",
+    "reference_guidance": "Explain that circumference measures distance around the circle, while squaring the radius belongs to area. Ask the student to choose the formula containing the diameter or twice the radius. Keep the focus on selecting and setting up the correct formula, without calculating the circumference."
+  },
+  {
+    "student_context": "Grade 8; slope from two points.",
+    "visible_work": "(2, 3), (6, 11); slope = (6-2)/(11-3)",
+    "student_question": "I subtracted both coordinates.",
+    "reference_guidance": "Confirm that corresponding coordinates were subtracted, then explain that slope is vertical change divided by horizontal change. Point to Step 2 and ask which subtraction represents the change in y and which represents the change in x. Have the student reorder the ratio without simplifying it for them."
+  },
+  {
+    "student_context": "Grade 8; slope-intercept form.",
+    "visible_work": "y = 3x + 2; slope = 2",
+    "student_question": "Is the last number always slope?",
+    "reference_guidance": "Explain the roles of the two constants in slope-intercept form: the coefficient of the variable gives the rate of change, while the standalone number gives the vertical intercept. Ask the student which number is attached directly to x in Step 1. Let the student identify the slope."
+  },
+  {
+    "student_context": "Algebra I; combining like terms.",
+    "visible_work": "4x + 3 + 2x = 9x",
+    "student_question": "Why can't I combine all three?",
+    "reference_guidance": "Explain that terms can combine only when their variable parts match exactly. Ask the student to group the two terms containing x and keep the constant separate. Refer to Step 2 as combining unlike terms, and do not provide the simplified expression."
+  },
+  {
+    "student_context": "Algebra I; exponent rules.",
+    "visible_work": "x^3 x x^2 = x^6",
+    "student_question": "Do I multiply the exponents?",
+    "reference_guidance": "Explain that multiplying powers with the same base means adding the exponents because the factors are being counted together. Ask the student to write the invisible exponent on the middle x and then add all three exponents. Do not state the resulting power."
+  },
+  {
+    "student_context": "Algebra I; power of a power.",
+    "visible_work": "(x^3)^2 = x^5",
+    "student_question": "I added three and two.",
+    "reference_guidance": "Explain that the outer exponent repeats the entire inner power, so the exponent rule differs from multiplying two separate powers. Ask how many copies of the inner group are being multiplied and what that implies for the exponents. Guide the student to revise Step 2 without stating it."
+  },
+  {
+    "student_context": "Algebra I; factoring trinomials.",
+    "visible_work": "x^2 + 7x + 12",
     "student_question": "Can you give me a hint?",
-    "reference_guidance": "Ask for two numbers with product 12 and sum 7. Do not reveal 3 and 4."
+    "reference_guidance": "Explain that factoring reverses multiplication and that the two unknown constants must satisfy two conditions. Ask for two numbers whose product is twelve and whose sum is seven. Encourage the student to list factor pairs of twelve, but do not reveal the pair or the factored form."
   },
   {
-    "student_context": "High school; factoring.",
-    "visible_work": "x^2+7x+12=(x+3)(x+4)",
+    "student_context": "Algebra I; checking a factored expression.",
+    "visible_work": "x^2 + 7x + 12 = (x + 3)(x + 4)",
     "student_question": "Is that it?",
-    "reference_guidance": "Say the factors are consistent and ask the student to expand them to verify."
+    "reference_guidance": "Say that the proposed factors are consistent with the needed sum and product. Ask the student to verify by multiplying the binomials and checking the middle and constant terms. Do not carry out the expansion for them."
   },
   {
-    "student_context": "Middle school; probability.",
-    "visible_work": "3 red, 2 blue; P(red)=3/2",
-    "student_question": "",
-    "reference_guidance": "Ask for favorable outcomes and total outcomes, noting that a probability cannot exceed one."
+    "student_context": "Algebra I; difference of squares.",
+    "visible_work": "x^2 - 16 = (x - 4)^2",
+    "student_question": "Both numbers are squares.",
+    "reference_guidance": "Acknowledge that both terms are perfect squares, then explain that a difference of squares uses conjugate factors rather than two identical factors. Ask what happens to the middle terms when one factor uses plus and the other uses minus. Do not write the completed factorization."
   },
   {
-    "student_context": "High school; functions.",
-    "visible_work": "f(x)=x^2; f(x+h)=x^2+h^2",
-    "student_question": "",
-    "reference_guidance": "Ask the student to substitute the whole input x+h for every x before expanding."
+    "student_context": "Algebra I; functions and substitution.",
+    "visible_work": "f(x) = x^2; f(x+h) = x^2 + h^2",
+    "student_question": "Where did I go wrong?",
+    "reference_guidance": "Explain that the whole input replaces every occurrence of x before any expansion happens. Point to Step 2 and ask the student to place the entire input inside the square first. Remind them that squaring a sum creates a middle term, but do not expand it completely."
   },
   {
-    "student_context": "High school; square roots.",
-    "visible_work": "x^2=9; x=3",
+    "student_context": "Algebra I; square roots and two branches.",
+    "visible_work": "x^2 = 9; x = 3",
     "student_question": "Done?",
-    "reference_guidance": "Ask whether both positive and negative values square to nine; do not state the complete final answer."
+    "reference_guidance": "Explain that both a positive and a negative number can produce the same positive square. Ask the student to test the opposite sign by squaring it. Prompt them to record both branches using plus-or-minus notation without explicitly listing the final values."
   },
   {
-    "student_context": "Middle school; low-confidence blurry image.",
-    "visible_work": "Possible equation, but operators and one digit are unreadable.",
-    "student_question": "",
-    "reference_guidance": "Do not invent a misconception. Ask the student to reposition the paper or clarify the unreadable line."
+    "student_context": "Algebra I; simplifying radicals.",
+    "visible_work": "sqrt(72) = sqrt(36) + sqrt(2)",
+    "student_question": "I split seventy-two.",
+    "reference_guidance": "Explain that a square root of a product may be separated into a product of roots, but not into a sum. Ask the student to factor seventy-two into a perfect-square factor times another factor. Stop before giving the simplified radical."
   },
   {
-    "student_context": "Elementary; multiplication; frustrated student.",
-    "visible_work": "17 x 24",
-    "student_question": "This is stupid. Just tell me.",
-    "reference_guidance": "Acknowledge frustration briefly, split 24 into 20+4, and ask for 17 times 20 without giving the final product."
+    "student_context": "Algebra II; rational expressions and invalid cancellation.",
+    "visible_work": "(x + 3)/x = 3",
+    "student_question": "I canceled the x.",
+    "reference_guidance": "Explain that cancellation applies to common factors multiplying an entire numerator and denominator, not to terms joined by addition. Ask whether x is a factor of every numerator term in Step 1. Suggest splitting the fraction or factoring first, without simplifying it for the student."
+  },
+  {
+    "student_context": "Algebra II; quadratic formula setup.",
+    "visible_work": "2x^2 + 3x - 5 = 0; a=2, b=3, c=5",
+    "student_question": "Did I label them correctly?",
+    "reference_guidance": "Confirm the first two coefficients and direct attention to the sign attached to the constant in Step 1. Explain that the coefficient includes its sign. Ask the student to correct only c before substituting anything into the formula."
+  },
+  {
+    "student_context": "Geometry; Pythagorean theorem.",
+    "visible_work": "legs 6 and 8; c = 6 + 8",
+    "student_question": "Is the hypotenuse fourteen?",
+    "reference_guidance": "Explain that the theorem relates the squares of the side lengths rather than the side lengths directly. Ask the student to identify the hypotenuse and write the equation using one square for each side. Do not calculate or state the hypotenuse."
+  },
+  {
+    "student_context": "SAT practice; linear equation multiple choice.",
+    "visible_work": "4(x - 2) = 20; choices 3, 5, 7, 9",
+    "student_question": "Can I use the choices?",
+    "reference_guidance": "Affirm that back-solving is an efficient SAT strategy. Ask the student to start with a middle answer choice, substitute it into the original left side, and compare the result with twenty. Explain how the comparison tells them whether to try a larger or smaller choice, without identifying the correct option."
+  },
+  {
+    "student_context": "Any level; low-confidence blurry camera image.",
+    "visible_work": "Possible equation, but one operator and two digits are unreadable.",
+    "student_question": "Can you check this?",
+    "reference_guidance": "Do not guess at the unreadable symbols or invent a misconception. Tell the student exactly what is unclear and ask them to flatten or reposition the paper so the full line is visible. Keep the response reassuring and do not offer a mathematical correction until the work can be read."
   }
 ]
-

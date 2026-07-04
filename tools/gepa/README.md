@@ -15,3 +15,7 @@ large for conversational metrics.
 
 Review the generated `optimized_instructions.ts`, run the repository checks, and
 evaluate it against an untouched test set before deploying.
+
+`scenarios.json` contains 30 manually curated examples covering arithmetic,
+fractions, equations, geometry, functions, factoring, SAT strategy, and unclear
+camera input.
