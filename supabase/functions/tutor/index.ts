@@ -20,16 +20,23 @@ type TutorObservation = {
   spoken_hint: string;
   hint_explanation: string;
   hint_action: string;
+  display_hint: string;
+  try_step: string;
   teacher_note: string;
   work_summary: string;
   teach_steps?: string[];
   final_answer_blocked: true;
+  vision_detail?: "low" | "auto" | "high";
+  observe_max_output_tokens?: number;
+  prompt_characters?: number;
+  response_bytes?: number;
 };
 
 const JSON_HEADERS = {
   "Content-Type": "application/json",
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-mathtutor-request-id",
 };
 
 const OBSERVE_TIMEOUT_MS = 35_000;
@@ -81,8 +88,8 @@ const OBSERVATION_SCHEMA = {
       ],
     },
     hint_level: { type: "integer", enum: [1, 2, 3] },
-    hint_explanation: { type: "string" },
-    hint_action: { type: "string" },
+    display_hint: { type: "string" },
+    try_step: { type: "string" },
     spoken_hint: { type: "string" },
     teacher_note: { type: "string" },
     work_summary: { type: "string" },
@@ -97,8 +104,8 @@ const OBSERVATION_SCHEMA = {
     "confidence",
     "misconception_type",
     "hint_level",
-    "hint_explanation",
-    "hint_action",
+    "display_hint",
+    "try_step",
     "spoken_hint",
     "teacher_note",
     "work_summary",
@@ -111,6 +118,26 @@ function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
 }
 
+function latencyLogger(scope: string, requestId: string) {
+  const startedAt = performance.now();
+  return (event: string, fields: Record<string, unknown> = {}) => {
+    console.log("mathtutor_elevenlabs_latency", {
+      scope,
+      request_id: requestId,
+      event,
+      elapsed_ms: Math.round(performance.now() - startedAt),
+      ...fields,
+    });
+  };
+}
+
+function configuredVisionDetail(): "low" | "auto" | "high" {
+  const configured = Deno.env.get("OPENAI_VISION_DETAIL")?.trim().toLowerCase();
+  return configured === "low" || configured === "auto" || configured === "high"
+    ? configured
+    : "high";
+}
+
 function stripCodeFences(input: string): string {
   return input
     .replace(/^\s*```(?:json)?\s*/i, "")
@@ -119,7 +146,9 @@ function stripCodeFences(input: string): string {
 }
 
 function parseResponsesText(responseJson: any): string {
-  if (typeof responseJson?.output_text === "string") return responseJson.output_text;
+  if (typeof responseJson?.output_text === "string") {
+    return responseJson.output_text;
+  }
 
   const output = responseJson?.output;
   if (!Array.isArray(output)) return "";
@@ -150,8 +179,9 @@ function evaluateNumericExpression(source: string): number | undefined {
 
   if (!/^[0-9+\-*/().]+$/.test(normalized)) return undefined;
 
-  const tokens = normalized.match(/\d+(?:\.\d+)?|[()+\-*/]/g);
-  if (!tokens || tokens.join("") !== normalized) return undefined;
+  const matchedTokens = normalized.match(/\d+(?:\.\d+)?|[()+\-*/]/g);
+  if (!matchedTokens || matchedTokens.join("") !== normalized) return undefined;
+  const tokens: string[] = matchedTokens;
   let cursor = 0;
 
   function parsePrimary(): number | undefined {
@@ -181,7 +211,9 @@ function evaluateNumericExpression(source: string): number | undefined {
     while (tokens[cursor] === "*" || tokens[cursor] === "/") {
       const operation = tokens[cursor++];
       const right = parsePrimary();
-      if (right === undefined || (operation === "/" && right === 0)) return undefined;
+      if (right === undefined || (operation === "/" && right === 0)) {
+        return undefined;
+      }
       value = operation === "*" ? value * right : value / right;
     }
     return value;
@@ -200,7 +232,9 @@ function evaluateNumericExpression(source: string): number | undefined {
   }
 
   const result = parseExpression();
-  return cursor === tokens.length && Number.isFinite(result) ? result : undefined;
+  return cursor === tokens.length && Number.isFinite(result)
+    ? result
+    : undefined;
 }
 
 function hasFalseNumericEquality(step: string): boolean {
@@ -215,20 +249,37 @@ function hasFalseNumericEquality(step: string): boolean {
 function isValidMathOnlyStep(step: string): boolean {
   // Keep accidental prose off the external math board.
   const normalized = step.trim();
-  if (!normalized || normalized.length > 160 || !hasBalancedBraces(normalized)) return false;
-  if (/\{\s*\}/.test(normalized) || /\^\s*\{\s*\}/.test(normalized)) return false;
-  if (normalized.includes("$") || normalized.includes("...") || normalized.includes(",")) return false;
+  if (
+    !normalized || normalized.length > 160 || !hasBalancedBraces(normalized)
+  ) return false;
+  if (/\{\s*\}/.test(normalized) || /\^\s*\{\s*\}/.test(normalized)) {
+    return false;
+  }
+  if (
+    normalized.includes("$") || normalized.includes("...") ||
+    normalized.includes(",")
+  ) return false;
   if (/^\s*[A-Za-z]\s*=\s*(?![A-Za-z](?:\s|$))/.test(normalized)) return false;
 
   const lowercased = normalized.toLowerCase();
-  if (FORBIDDEN_MATH_WORDS.some((word) => new RegExp(`\\b${word}\\b`, "i").test(lowercased))) {
+  if (
+    FORBIDDEN_MATH_WORDS.some((word) =>
+      new RegExp(`\\b${word}\\b`, "i").test(lowercased)
+    )
+  ) {
     return false;
   }
   if (/\\text|\\mathrm|\\operatorname/i.test(normalized)) return false;
-  if (/(^|[^\\])\b(?:frac|sqrt|cdot|times|div|neq|leq|geq)\b/i.test(normalized)) return false;
+  if (
+    /(^|[^\\])\b(?:frac|sqrt|cdot|times|div|neq|leq|geq)\b/i.test(normalized)
+  ) return false;
 
-  const commands = [...normalized.matchAll(/\\([A-Za-z]+)/g)].map((match) => match[1]);
-  if (commands.some((command) => !ALLOWED_LATEX_COMMANDS.has(command))) return false;
+  const commands = [...normalized.matchAll(/\\([A-Za-z]+)/g)].map((match) =>
+    match[1]
+  );
+  if (commands.some((command) => !ALLOWED_LATEX_COMMANDS.has(command))) {
+    return false;
+  }
 
   const withoutCommands = normalized.replace(/\\[A-Za-z]+/g, "");
   if (/[A-Za-z]{2,}/.test(withoutCommands)) return false;
@@ -262,7 +313,9 @@ function normalizeObservation(value: unknown): TutorObservation {
 
   const teachSteps = Array.isArray(row.teach_steps)
     ? row.teach_steps
-      .filter((step): step is string => typeof step === "string" && step.trim().length > 0)
+      .filter((step): step is string =>
+        typeof step === "string" && step.trim().length > 0
+      )
       .map((step) => step.trim())
       .filter(isValidMathOnlyStep)
       .slice(0, 3)
@@ -270,15 +323,37 @@ function normalizeObservation(value: unknown): TutorObservation {
   const mistakeDetected = typeof row.mistake_detected === "boolean"
     ? row.mistake_detected
     : true;
-  const confidence: TutorObservation["confidence"] = misconceptionType === "unclear_work"
-    ? "low"
-    : mistakeDetected
-    ? "high"
-    : "medium";
+  const confidence: TutorObservation["confidence"] =
+    misconceptionType === "unclear_work"
+      ? "low"
+      : mistakeDetected
+      ? "high"
+      : "medium";
+  const squareRootFallback = {
+    explanation:
+      "Your setup is correct, but the square root of 16 is 4, not 8.",
+    action: "Replace ±8 with ±4, then continue solving from there.",
+  };
+  const genericFallback = {
+    explanation: "Check the first incorrect step carefully before continuing.",
+    action: "Redo only that step, then try the next line again.",
+  };
+  const fallback = misconceptionType === "square_root"
+    ? squareRootFallback
+    : genericFallback;
+  const displayHint = validStudentFacingText(row.display_hint)
+    ? String(row.display_hint).trim()
+    : fallback.explanation;
+  const tryStep = validStudentFacingText(row.try_step)
+    ? String(row.try_step).trim()
+    : fallback.action;
+  const spokenHint = validStudentFacingText(row.spoken_hint)
+    ? row.spoken_hint
+    : `${displayHint} ${tryStep}`;
   const compactHint = buildCompactHint({
-    explanation: row.hint_explanation,
-    action: row.hint_action,
-    spokenHint: row.spoken_hint,
+    explanation: displayHint,
+    action: tryStep,
+    spokenHint,
     legacyHint: row.hint,
     mistakeDetected,
   });
@@ -292,11 +367,32 @@ function normalizeObservation(value: unknown): TutorObservation {
     spoken_hint: compactHint.spokenHint,
     hint_explanation: compactHint.explanation,
     hint_action: compactHint.action,
-    teacher_note: typeof row.teacher_note === "string" ? row.teacher_note.trim() : "",
-    work_summary: typeof row.work_summary === "string" ? row.work_summary.trim() : "",
+    display_hint: compactHint.explanation,
+    try_step: compactHint.action,
+    teacher_note: typeof row.teacher_note === "string"
+      ? row.teacher_note.trim()
+      : "",
+    work_summary: typeof row.work_summary === "string"
+      ? row.work_summary.trim()
+      : "",
     teach_steps: teachSteps && teachSteps.length > 0 ? teachSteps : undefined,
     final_answer_blocked: true,
+    vision_detail: undefined,
+    observe_max_output_tokens: undefined,
+    prompt_characters: undefined,
+    response_bytes: undefined,
   };
+}
+
+function validStudentFacingText(value: unknown): value is string {
+  if (typeof value !== "string" || value.trim().length === 0) return false;
+  const normalized = value.toLowerCase();
+  return !value.includes("\\") &&
+    !normalized.includes("that value") &&
+    !normalized.includes("marked expression") &&
+    !normalized.includes("marked value") &&
+    !normalized.includes("placeholder") &&
+    !normalized.includes("sqrt(");
 }
 
 async function fetchWithTimeout(
@@ -313,14 +409,18 @@ async function fetchWithTimeout(
   }
 }
 
-function observeWorkPrompt(student: any, session: any): string {
-  const name = typeof student?.name === "string" && student.name.trim().length > 0
-    ? student.name.trim()
-    : "Student";
-  const level = typeof student?.level === "string" ? student.level : "Algebra II";
-  const misconceptions = student?.misconceptions && typeof student.misconceptions === "object"
-    ? JSON.stringify(student.misconceptions)
-    : "{}";
+function _verboseObserveWorkPrompt(student: any, session: any): string {
+  const name =
+    typeof student?.name === "string" && student.name.trim().length > 0
+      ? student.name.trim()
+      : "Student";
+  const level = typeof student?.level === "string"
+    ? student.level
+    : "Algebra II";
+  const misconceptions =
+    student?.misconceptions && typeof student.misconceptions === "object"
+      ? JSON.stringify(student.misconceptions)
+      : "{}";
   const checkNumber = Number(session?.check_number ?? 1);
   const noAnswerMode = session?.no_answer_mode !== false;
   const studentQuestion = typeof session?.student_question === "string"
@@ -336,10 +436,18 @@ Student context:
 - Past misconception counts: ${misconceptions}
 - Session check number: ${checkNumber}
 - No-answer mode: ${noAnswerMode ? "enabled" : "disabled"}
-${studentQuestion ? `- Student's spoken question: ${JSON.stringify(studentQuestion)}` : ""}
+${
+    studentQuestion
+      ? `- Student's spoken question: ${JSON.stringify(studentQuestion)}`
+      : ""
+  }
 
 Analyze the visible work as one problem. Find the first incorrect transition, but do not over-interrupt if confidence is low. Use the student's past mistakes only when they match evidence in this image.
-${studentQuestion ? "Answer the student's spoken question about the visible work with one concise guided hint. Do not ignore the question." : ""}
+${
+    studentQuestion
+      ? "Answer the student's spoken question about the visible work with one concise guided hint. Do not ignore the question."
+      : ""
+  }
 
 ${OPTIMIZED_TUTOR_INSTRUCTIONS}
 
@@ -380,6 +488,8 @@ Hard rules:
 - Use "square_root" only when a square, radical, root operation, or missing \\pm is actually visible.
 - Never mention a square root, sign error, distribution, or any other topic unless that feature is visible in this image.
 - In no-answer mode, stop at the most useful intermediate step before the final solved value.
+- If a candidate final answer is visible, explain how to verify it without confirming whether it is correct.
+- Do not set up the final operation when only trivial arithmetic remains, and do not state a categorical final result such as an undefined slope.
 - If the work is correct or too unclear, say so without inventing a mistake.
 
 Return only the requested structured object. When the image is unclear, use misconception_type "unclear_work" and an empty teach_steps array.
@@ -399,6 +509,51 @@ Return only the requested structured object. When the image is unclear, use misc
 `.trim();
 }
 
+function observeWorkPrompt(student: any, session: any): string {
+  const name = typeof student?.name === "string" && student.name.trim()
+    ? student.name.trim()
+    : "Student";
+  const level = typeof student?.level === "string"
+    ? student.level
+    : "Algebra II";
+  const misconceptions =
+    student?.misconceptions && typeof student.misconceptions === "object"
+      ? JSON.stringify(student.misconceptions)
+      : "{}";
+  const checkNumber = Number(session?.check_number ?? 1);
+  const noAnswerMode = session?.no_answer_mode !== false;
+  const studentQuestion = typeof session?.student_question === "string"
+    ? session.student_question.trim().slice(0, 300)
+    : "";
+
+  return `
+You are MathTutor analyzing ${name}'s handwritten math.
+Context: level=${level}; prior_misconceptions=${misconceptions};
+check=${checkNumber}; no_answer=${noAnswerMode}.
+${studentQuestion ? `Student question: ${JSON.stringify(studentQuestion)}` : ""}
+
+${OPTIMIZED_TUTOR_INSTRUCTIONS}
+
+Output constraints:
+- Return only the requested schema object.
+- display_hint: one concise, specific plain-text sentence.
+- try_step: exactly one short, actionable plain-text sentence.
+- spoken_hint: one plain-English sentence, 15–30 words, no notation.
+- teacher_note and work_summary: at most one short sentence each.
+- teach_steps: 0–2 valid math-only LaTeX lines using visible symbols.
+- Student-facing fields use plain text only. Use √, ±, ×, ÷, and ≤ rather
+  than LaTeX or backslash commands.
+- teach_steps contain no prose, dollar signs, \\text, or empty groups.
+- Never name a misconception unsupported by visible work.
+- Never use "that value", "marked expression", "marked value", "placeholder",
+  raw LaTeX, backslash commands, or incomplete math fragments.
+- For a square-root error like ±8 from 16, write naturally: display_hint
+  "Your setup is correct, but the square root of 16 is 4, not 8." and try_step
+  "Replace ±8 with ±4, then continue solving from there."
+- Keep final_answer_blocked true. If unreadable, use unclear_work and [].
+`.trim();
+}
+
 async function supabaseRest(
   table: string,
   body: unknown,
@@ -407,7 +562,9 @@ async function supabaseRest(
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY secret.");
+    throw new Error(
+      "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY secret.",
+    );
   }
 
   return await fetch(`${supabaseUrl}/rest/v1/${table}`, {
@@ -425,16 +582,23 @@ async function supabaseRest(
 async function logSession(body: Record<string, unknown>): Promise<Response> {
   const student = body.student as Record<string, unknown> | undefined;
   const session = body.session as Record<string, unknown> | undefined;
-  const events = Array.isArray(body.events) ? body.events as Record<string, unknown>[] : [];
+  const events = Array.isArray(body.events)
+    ? body.events as Record<string, unknown>[]
+    : [];
 
   if (!student || !session) {
-    return jsonResponse({ error: 'Missing required "student" or "session" object.' }, 400);
+    return jsonResponse({
+      error: 'Missing required "student" or "session" object.',
+    }, 400);
   }
 
   const studentId = String(student.id ?? "");
   const sessionId = String(session.id ?? "");
   if (!studentId || !sessionId) {
-    return jsonResponse({ error: "Student and session IDs are required." }, 400);
+    return jsonResponse(
+      { error: "Student and session IDs are required." },
+      400,
+    );
   }
 
   const studentRes = await supabaseRest("teacher_students?on_conflict=id", {
@@ -442,7 +606,8 @@ async function logSession(body: Record<string, unknown>): Promise<Response> {
     name: String(student.name ?? "Student"),
     math_level: String(student.math_level ?? student.level ?? "Algebra II"),
     consent_accepted: Boolean(student.consent_accepted ?? true),
-    misconception_counts: student.misconception_counts ?? student.misconceptions ?? {},
+    misconception_counts: student.misconception_counts ??
+      student.misconceptions ?? {},
     updated_at: new Date().toISOString(),
   }, { prefer: "resolution=merge-duplicates,return=minimal" });
 
@@ -484,9 +649,13 @@ async function logSession(body: Record<string, unknown>): Promise<Response> {
       final_answer_blocked: event.final_answer_blocked !== false,
     }));
 
-    const eventsRes = await supabaseRest("teacher_events?on_conflict=id", eventRows, {
-      prefer: "resolution=merge-duplicates,return=minimal",
-    });
+    const eventsRes = await supabaseRest(
+      "teacher_events?on_conflict=id",
+      eventRows,
+      {
+        prefer: "resolution=merge-duplicates,return=minimal",
+      },
+    );
 
     if (!eventsRes.ok) {
       return jsonResponse({
@@ -500,17 +669,27 @@ async function logSession(body: Record<string, unknown>): Promise<Response> {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: JSON_HEADERS });
+  const logLatency = latencyLogger(
+    "observe_work",
+    req.headers.get("x-mathtutor-request-id") ?? crypto.randomUUID(),
+  );
+  logLatency("supabase_tutor_request_received", { method: req.method });
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: JSON_HEADERS });
+  }
   if (req.method !== "POST") {
     return jsonResponse({ error: "Method not allowed. Use POST." }, 405);
   }
 
   const openaiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!openaiKey) return jsonResponse({ error: "Missing OPENAI_API_KEY secret." }, 500);
+  if (!openaiKey) {
+    return jsonResponse({ error: "Missing OPENAI_API_KEY secret." }, 500);
+  }
 
   let body: Record<string, unknown>;
   try {
     body = await req.json();
+    logLatency("request_json_parsed");
   } catch {
     return jsonResponse({ error: "Invalid JSON body." }, 400);
   }
@@ -525,15 +704,71 @@ Deno.serve(async (req) => {
     }, 400);
   }
 
-  const imageBase64 = typeof body.image_base64 === "string" ? body.image_base64.trim() : "";
+  const imageBase64 = typeof body.image_base64 === "string"
+    ? body.image_base64.trim()
+    : "";
   if (!imageBase64) {
-    return jsonResponse({ error: 'Missing required field "image_base64".' }, 400);
+    return jsonResponse(
+      { error: 'Missing required field "image_base64".' },
+      400,
+    );
   }
+  logLatency("image_payload_received", {
+    base64_bytes: new TextEncoder().encode(imageBase64).byteLength,
+    estimated_image_bytes: Math.floor(imageBase64.length * 0.75),
+  });
 
   try {
-    const student = body.student && typeof body.student === "object" ? body.student : {};
-    const session = body.session && typeof body.session === "object" ? body.session : {};
+    const student = body.student && typeof body.student === "object"
+      ? body.student
+      : {};
+    const session = body.session && typeof body.session === "object"
+      ? body.session
+      : {};
 
+    const model = Deno.env.get("OPENAI_OBSERVE_MODEL") ?? "gpt-5.4";
+    const visionDetail = configuredVisionDetail();
+    const prompt = observeWorkPrompt(student, session);
+    const maxOutputTokens = 350;
+    const openAIRequestBody = JSON.stringify({
+      model,
+      reasoning: { effort: "low" },
+      input: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: prompt,
+            },
+            {
+              type: "input_image",
+              image_url: `data:image/jpeg;base64,${imageBase64}`,
+              detail: visionDetail,
+            },
+          ],
+        },
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "tutor_observation",
+          strict: true,
+          schema: OBSERVATION_SCHEMA,
+        },
+      },
+      max_output_tokens: maxOutputTokens,
+    });
+    logLatency("openai_request_body_constructed", {
+      image_detail: visionDetail,
+      max_output_tokens: maxOutputTokens,
+      model,
+      prompt_characters: prompt.length,
+      request_bytes: new TextEncoder().encode(openAIRequestBody).byteLength,
+    });
+    logLatency("openai_request_started", {
+      model,
+    });
     const observeRes = await fetchWithTimeout(
       "https://api.openai.com/v1/responses",
       {
@@ -542,37 +777,19 @@ Deno.serve(async (req) => {
           Authorization: `Bearer ${openaiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          model: Deno.env.get("OPENAI_OBSERVE_MODEL") ?? "gpt-5.4",
-          reasoning: { effort: "low" },
-          input: [
-            {
-              role: "user",
-              content: [
-                { type: "input_text", text: observeWorkPrompt(student, session) },
-                {
-                  type: "input_image",
-                  image_url: `data:image/jpeg;base64,${imageBase64}`,
-                  detail: "high",
-                },
-              ],
-            },
-          ],
-          text: {
-            format: {
-              type: "json_schema",
-              name: "tutor_observation",
-              strict: true,
-              schema: OBSERVATION_SCHEMA,
-            },
-          },
-          max_output_tokens: 900,
-        }),
+        body: openAIRequestBody,
       },
       OBSERVE_TIMEOUT_MS,
     );
 
+    logLatency("openai_response_received", {
+      status: observeRes.status,
+    });
     const observeText = await observeRes.text();
+    const responseBytes = new TextEncoder().encode(observeText).byteLength;
+    logLatency("openai_response_body_fully_read", {
+      bytes: responseBytes,
+    });
     if (!observeRes.ok) {
       console.log("tutor:observe:error", {
         status: observeRes.status,
@@ -587,17 +804,37 @@ Deno.serve(async (req) => {
 
     const responseJson = JSON.parse(observeText);
     const rawText = parseResponsesText(responseJson);
+    logLatency("openai_response_text_extracted", { chars: rawText.length });
     if (!rawText.trim()) {
-      return jsonResponse({ error: "Observation response content was empty." }, 500);
+      return jsonResponse(
+        { error: "Observation response content was empty." },
+        500,
+      );
     }
 
-    const observation = normalizeObservation(JSON.parse(stripCodeFences(rawText)));
+    const observation = normalizeObservation(
+      JSON.parse(stripCodeFences(rawText)),
+    );
+    observation.vision_detail = visionDetail;
+    observation.observe_max_output_tokens = maxOutputTokens;
+    observation.prompt_characters = prompt.length;
+    observation.response_bytes = responseBytes;
+    logLatency("response_parsed", {
+      spoken_words: observation.spoken_hint.split(/\s+/).filter(Boolean).length,
+    });
+    logLatency("response_returned");
     return jsonResponse(observation);
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {
-      return jsonResponse({ error: "OpenAI observation request timed out." }, 504);
+      return jsonResponse(
+        { error: "OpenAI observation request timed out." },
+        504,
+      );
     }
     console.log("tutor:crash", String(err));
-    return jsonResponse({ error: "Tutor function failed.", details: String(err) }, 500);
+    return jsonResponse({
+      error: "Tutor function failed.",
+      details: String(err),
+    }, 500);
   }
 });

@@ -3,6 +3,49 @@ import Combine
 import ObjectiveC
 import UIKit
 
+struct CapturedCameraFrame {
+    let data: Data
+    let originalWidth: Int
+    let originalHeight: Int
+    let outputWidth: Int
+    let outputHeight: Int
+    let originalBytes: Int
+    let jpegQuality: Double
+    let preset: String
+}
+
+private struct CameraCompressionPreset {
+    let name: String
+    let maximumDimension: CGFloat
+    let jpegQuality: Double
+
+    static var active: CameraCompressionPreset {
+        #if DEBUG
+        switch ProcessInfo.processInfo.environment["MATHTUTOR_CAMERA_PRESET"] {
+        case "1024":
+            return CameraCompressionPreset(
+                name: "1024_q065",
+                maximumDimension: 1_024,
+                jpegQuality: 0.65
+            )
+        case "896":
+            return CameraCompressionPreset(
+                name: "896_q065",
+                maximumDimension: 896,
+                jpegQuality: 0.65
+            )
+        default:
+            break
+        }
+        #endif
+        return CameraCompressionPreset(
+            name: "1280_q068",
+            maximumDimension: 1_280,
+            jpegQuality: 0.68
+        )
+    }
+}
+
 @MainActor
 final class CameraObservationService: NSObject, ObservableObject {
     @Published var isRunning = false
@@ -36,15 +79,16 @@ final class CameraObservationService: NSObject, ObservableObject {
         }
     }
 
-    func captureFrame() async throws -> Data {
+    func captureFrame() async throws -> CapturedCameraFrame {
+        let preset = CameraCompressionPreset.active
         #if targetEnvironment(simulator)
         guard !session.outputs.isEmpty else {
-            return simulatedPaperFrame()
+            return simulatedPaperFrame(preset: preset)
         }
         #endif
 
         return try await withCheckedThrowingContinuation { continuation in
-            let delegate = PhotoCaptureDelegate { result in
+            let delegate = PhotoCaptureDelegate(preset: preset) { result in
                 continuation.resume(with: result)
             }
             objc_setAssociatedObject(
@@ -53,10 +97,9 @@ final class CameraObservationService: NSObject, ObservableObject {
                 delegate,
                 .OBJC_ASSOCIATION_RETAIN_NONATOMIC
             )
-            photoOutput.capturePhoto(
-                with: AVCapturePhotoSettings(),
-                delegate: delegate
-            )
+            let settings = AVCapturePhotoSettings()
+            settings.photoQualityPrioritization = .speed
+            photoOutput.capturePhoto(with: settings, delegate: delegate)
         }
     }
 
@@ -91,6 +134,7 @@ final class CameraObservationService: NSObject, ObservableObject {
 
         if session.outputs.isEmpty, session.canAddOutput(photoOutput) {
             session.addOutput(photoOutput)
+            photoOutput.maxPhotoQualityPrioritization = .speed
         }
 
         session.commitConfiguration()
@@ -103,7 +147,9 @@ final class CameraObservationService: NSObject, ObservableObject {
     }
 
     #if targetEnvironment(simulator)
-    private func simulatedPaperFrame() -> Data {
+    private func simulatedPaperFrame(
+        preset: CameraCompressionPreset
+    ) -> CapturedCameraFrame {
         let size = CGSize(width: 900, height: 700)
         let renderer = UIGraphicsImageRenderer(size: size)
         let image = renderer.image { context in
@@ -134,15 +180,30 @@ final class CameraObservationService: NSObject, ObservableObject {
                 )
             }
         }
-        return image.pngData() ?? Data()
+        let data = image.jpegData(compressionQuality: preset.jpegQuality) ?? Data()
+        return CapturedCameraFrame(
+            data: data,
+            originalWidth: Int(size.width),
+            originalHeight: Int(size.height),
+            outputWidth: Int(size.width),
+            outputHeight: Int(size.height),
+            originalBytes: data.count,
+            jpegQuality: preset.jpegQuality,
+            preset: preset.name
+        )
     }
     #endif
 }
 
 private final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
-    private let completion: (Result<Data, Error>) -> Void
+    private let preset: CameraCompressionPreset
+    private let completion: (Result<CapturedCameraFrame, Error>) -> Void
 
-    init(completion: @escaping (Result<Data, Error>) -> Void) {
+    init(
+        preset: CameraCompressionPreset,
+        completion: @escaping (Result<CapturedCameraFrame, Error>) -> Void
+    ) {
+        self.preset = preset
         self.completion = completion
     }
 
@@ -164,13 +225,27 @@ private final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegat
             return
         }
 
-        let maximumSize = CGSize(width: 1_600, height: 1_600)
+        let maximumSize = CGSize(
+            width: preset.maximumDimension,
+            height: preset.maximumDimension
+        )
         let resized = image.preparingThumbnail(of: maximumSize) ?? image
-        guard let compressed = resized.jpegData(compressionQuality: 0.72) else {
+        guard let compressed = resized.jpegData(
+            compressionQuality: preset.jpegQuality
+        ) else {
             completion(.failure(CameraError.emptyFrame))
             return
         }
-        completion(.success(compressed))
+        completion(.success(CapturedCameraFrame(
+            data: compressed,
+            originalWidth: image.cgImage?.width ?? Int(image.size.width * image.scale),
+            originalHeight: image.cgImage?.height ?? Int(image.size.height * image.scale),
+            outputWidth: resized.cgImage?.width ?? Int(resized.size.width * resized.scale),
+            outputHeight: resized.cgImage?.height ?? Int(resized.size.height * resized.scale),
+            originalBytes: data.count,
+            jpegQuality: preset.jpegQuality,
+            preset: preset.name
+        )))
     }
 }
 

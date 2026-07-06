@@ -19,19 +19,22 @@ public struct TutorObservationRequest: Encodable, Sendable {
     public var checkNumber: Int
     public var noAnswerMode: Bool
     public var studentQuestion: String?
+    public var requestID: String?
 
     public init(
         imageBase64: String,
         student: StudentProfile,
         checkNumber: Int,
         noAnswerMode: Bool,
-        studentQuestion: String? = nil
+        studentQuestion: String? = nil,
+        requestID: String? = nil
     ) {
         self.imageBase64 = imageBase64
         self.student = student
         self.checkNumber = checkNumber
         self.noAnswerMode = noAnswerMode
         self.studentQuestion = studentQuestion
+        self.requestID = requestID
     }
 }
 
@@ -61,6 +64,11 @@ public final class SupabaseTutorClient: TutorBrainServicing, @unchecked Sendable
     }
 
     public func observeWork(_ request: TutorObservationRequest) async throws -> TutorObservation {
+        let trace = TutorClientLatencyTrace(
+            scope: "observe_work",
+            id: request.requestID ?? UUID().uuidString
+        )
+        trace.log("tutor_request_started", fields: ["check": "\(request.checkNumber)"])
         let endpoint = configuration.url
             .appendingPathComponent("functions")
             .appendingPathComponent("v1")
@@ -90,9 +98,15 @@ public final class SupabaseTutorClient: TutorBrainServicing, @unchecked Sendable
         urlRequest.setValue(configuration.anonKey, forHTTPHeaderField: "apikey")
         urlRequest.setValue("Bearer \(configuration.anonKey)", forHTTPHeaderField: "Authorization")
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue(trace.id, forHTTPHeaderField: "X-MathTutor-Request-ID")
         urlRequest.httpBody = try encoder.encode(body)
+        trace.log("tutor_request_body_prepared", fields: [
+            "base64_bytes": "\(request.imageBase64.utf8.count)",
+            "request_bytes": "\(urlRequest.httpBody?.count ?? 0)",
+        ])
 
         let (data, response) = try await urlSession.data(for: urlRequest)
+        trace.log("tutor_response_received", fields: ["bytes": "\(data.count)"])
         guard let httpResponse = response as? HTTPURLResponse,
               (200..<300).contains(httpResponse.statusCode)
         else {
@@ -100,7 +114,11 @@ public final class SupabaseTutorClient: TutorBrainServicing, @unchecked Sendable
             throw TutorClientError.edgeFunctionFailed(message)
         }
 
-        return try decoder.decode(TutorObservation.self, from: data)
+        let observation = try decoder.decode(TutorObservation.self, from: data)
+        trace.log("tutor_response_decoded", fields: [
+            "spoken_words": "\(observation.spokenHint.split(whereSeparator: { $0.isWhitespace }).count)",
+        ])
+        return observation
     }
 
     public func logSession(_ session: TutoringSession) async throws {
@@ -127,6 +145,31 @@ public final class SupabaseTutorClient: TutorBrainServicing, @unchecked Sendable
         }
     }
 
+}
+
+private final class TutorClientLatencyTrace {
+    private let clock = ContinuousClock()
+    private let scope: String
+    let id: String
+    private let startedAt: ContinuousClock.Instant
+
+    init(scope: String, id: String) {
+        self.scope = scope
+        self.id = id
+        self.startedAt = clock.now
+    }
+
+    func log(_ event: String, fields: [String: String] = [:]) {
+        let elapsed = startedAt.duration(to: clock.now)
+        let milliseconds = elapsed.components.seconds * 1_000
+            + elapsed.components.attoseconds / 1_000_000_000_000_000
+        let suffix = fields
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: " ")
+        let message = "mathtutor_elevenlabs_latency scope=\(scope) event=\(event) request_id=\(id) elapsed_ms=\(milliseconds)"
+        print(suffix.isEmpty ? message : "\(message) \(suffix)")
+    }
 }
 
 public enum TutorClientError: Error, LocalizedError, Sendable {

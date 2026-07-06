@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		7A1000013000000000000001 /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = 7A1000033000000000000001 /* SwiftMath */; };
-		7A2000013000000000000001 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = 7A2000033000000000000001 /* FluidAudio */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,7 +40,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				7A2000013000000000000001 /* FluidAudio in Frameworks */,
 				7A1000013000000000000001 /* SwiftMath in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -85,7 +83,6 @@
 			);
 			name = MathTutor;
 			packageProductDependencies = (
-				7A2000033000000000000001 /* FluidAudio */,
 				7A1000033000000000000001 /* SwiftMath */,
 			);
 			productName = MathTutor;
@@ -117,7 +114,6 @@
 			mainGroup = 4145CD3E2FD7D248006D9E18;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				7A2000023000000000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */,
 				7A1000023000000000000001 /* XCRemoteSwiftPackageReference "SwiftMath" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -382,14 +378,6 @@
 				minimumVersion = 1.7.3;
 			};
 		};
-		7A2000023000000000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/FluidInference/FluidAudio.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 0.15.4;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -397,11 +385,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 7A1000023000000000000001 /* XCRemoteSwiftPackageReference "SwiftMath" */;
 			productName = SwiftMath;
-		};
-		7A2000033000000000000001 /* FluidAudio */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 7A2000023000000000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */;
-			productName = FluidAudio;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

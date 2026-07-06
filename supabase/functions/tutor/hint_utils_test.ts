@@ -71,7 +71,7 @@ Deno.test("malformed or empty LaTeX uses a readable fallback", () => {
       "sanitized hint still contains invalid LaTeX",
     );
     assert(
-      result.action.includes("the marked expression"),
+      result.action.includes("that value"),
       "invalid expression was not replaced readably",
     );
     assert(
@@ -95,7 +95,7 @@ Deno.test("one valid inline expression stays visible but is not read aloud", () 
     "valid math was removed",
   );
   assert(
-    hintToSpeech(result.hint).includes("the marked expression"),
+    hintToSpeech(result.hint).includes("that value"),
     "display math could not be converted to safe fallback speech",
   );
   assert(!result.spokenHint.includes("\\"), "spoken hint still contains LaTeX");

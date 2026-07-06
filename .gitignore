@@ -1,6 +1,7 @@
 .env
 .tools/
 .build/
+tmp/
 MathTutorSwift/.build/
 supabase/.temp/
 

@@ -54,18 +54,11 @@ struct CompactTutorHintView: View {
     let action: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            if explanation.contains("\\(") {
-                TutorHintView(content: explanation)
-            } else {
-                Text(explanation)
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(MTTheme.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Divider()
-                .overlay(MTTheme.chemicalGold.opacity(0.45))
+        VStack(alignment: .leading, spacing: 13) {
+            TutorHintView(
+                content: TutorDisplayTextSanitizer.clean(explanation),
+                font: .body.weight(.semibold)
+            )
 
             HStack(alignment: .top, spacing: 9) {
                 Text("TRY")
@@ -75,25 +68,43 @@ struct CompactTutorHintView: View {
                     .padding(.vertical, 5)
                     .background(MTTheme.chemicalGold.opacity(0.32), in: Capsule())
 
-                TutorHintView(content: action)
+                TutorHintView(
+                    content: TutorDisplayTextSanitizer.clean(action),
+                    font: .body
+                )
             }
+            .padding(10)
+            .background(
+                MTTheme.notebookPaper.opacity(0.62),
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(explanation) Try: \(action)")
+        .accessibilityLabel(
+            "\(TutorDisplayTextSanitizer.clean(explanation)) Try: \(TutorDisplayTextSanitizer.clean(action))"
+        )
     }
 }
 
 struct TutorHintView: View {
     let content: String
+    var font: Font = .body.weight(.medium)
 
     var body: some View {
         HintFlowLayout(horizontalSpacing: 4, verticalSpacing: 7) {
-            ForEach(Array(LaTeXNormalizer.inlineTokens(in: content).enumerated()), id: \.offset) { _, token in
+            ForEach(
+                Array(
+                    LaTeXNormalizer.inlineTokens(
+                        in: TutorDisplayTextSanitizer.clean(content)
+                    ).enumerated()
+                ),
+                id: \.offset
+            ) { _, token in
                 switch token {
                 case .word(let word):
                     Text(word)
-                        .font(.body.weight(.medium))
+                        .font(font)
                         .foregroundStyle(MTTheme.ink)
                         .fixedSize()
                 case .math(let latex):
@@ -299,7 +310,7 @@ enum LaTeXNormalizer {
         return fallback.isEmpty ? "?" : fallback
     }
 
-    static func expression(_ source: String) -> String {
+    nonisolated static func expression(_ source: String) -> String {
         var result = repairJSONEscapes(in: source)
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "```latex", with: "", options: .caseInsensitive)
@@ -397,7 +408,7 @@ enum LaTeXNormalizer {
         return MTMathListBuilder.build(fromString: normalized, error: &error) != nil && error == nil
     }
 
-    static func isMathOnlyExpression(_ source: String) -> Bool {
+    nonisolated static func isMathOnlyExpression(_ source: String) -> Bool {
         let normalized = expression(source)
         let forbiddenWords = [
             "something",
@@ -443,7 +454,7 @@ enum LaTeXNormalizer {
         return withoutCommands.range(of: #"[A-Za-z]{2,}"#, options: .regularExpression) == nil
     }
 
-    private static func bracesAreBalanced(in source: String) -> Bool {
+    nonisolated private static func bracesAreBalanced(in source: String) -> Bool {
         var depth = 0
         for character in source {
             if character == "{" {
@@ -458,7 +469,7 @@ enum LaTeXNormalizer {
         return depth == 0
     }
 
-    private static func repairJSONEscapes(in source: String) -> String {
+    nonisolated private static func repairJSONEscapes(in source: String) -> String {
         source
             .replacingOccurrences(of: "\u{000C}rac", with: "\\frac")
             .replacingOccurrences(of: "\u{0008}egin", with: "\\begin")
@@ -469,6 +480,7 @@ enum LaTeXNormalizer {
     }
 
     static func segments(in source: String) -> [TutorContentSegment] {
+        let source = TutorDisplayTextSanitizer.clean(source)
         let pattern = #"\\\((.*?)\\\)|\\\[(.*?)\\\]|\$\$(.*?)\$\$|\$(.*?)\$"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else {
             return [.prose(source)]

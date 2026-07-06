@@ -74,6 +74,55 @@ assert(
         presentation: mathPresentation
     ) == generatedSummary
 )
+let spokenChunks = SpokenHintPolicy.speechChunks(
+    """
+    Your setup is right. The next line drops part of the multiplication before the expression is fully distributed. \
+    Redo that distribution step first, then rewrite the next line only after both products are accounted for.
+    """
+)
+assert(spokenChunks.count <= 2)
+assert(spokenChunks.allSatisfy { !$0.isEmpty && $0.hasSuffix(".") })
+
+assert(
+    MathSpeechNormalizer.normalize("16, 17, 18, 19, 20") ==
+        "sixteen, seventeen, eighteen, nineteen, twenty"
+)
+assert(
+    MathSpeechNormalizer.normalize("2x + 3/4 = 19") ==
+        "two x plus three fourths equals nineteen"
+)
+assert(MathSpeechNormalizer.normalize("x - 16") == "x minus sixteen")
+assert(MathSpeechNormalizer.normalize("2 * 3 × 4") == "2 times 3 times 4")
+assert(MathSpeechNormalizer.normalize("mid-word and path/to") == "mid-word and path/to")
+
+let cleanedTutorDisplay = TutorDisplayTextSanitizer.clean(
+    #"\\,\\((x-4)^2=16\\),"#
+)
+assert(!cleanedTutorDisplay.contains(#"\,"#))
+assert(!cleanedTutorDisplay.contains(#"\("#))
+assert(!cleanedTutorDisplay.contains(#"\)"#))
+assert(cleanedTutorDisplay.contains("(x - 4)^2 = 16"))
+let placeholderFallback = TutorDisplayTextSanitizer.validated(
+    #"Replace the line that value - 4) = \that value 8."#,
+    fallback: TutorDisplayTextSanitizer.fallbackAction
+)
+assert(placeholderFallback == TutorDisplayTextSanitizer.fallbackAction)
+assert(!placeholderFallback.lowercased().contains("that value"))
+assert(!placeholderFallback.contains("\\"))
+let escapedPlaceholderFallback = TutorDisplayTextSanitizer.validated(
+    #"\that value"#,
+    fallback: TutorDisplayTextSanitizer.fallbackHint
+)
+assert(escapedPlaceholderFallback == TutorDisplayTextSanitizer.fallbackHint)
+let markedExpressionFallback = TutorDisplayTextSanitizer.validated(
+    "Recheck the marked expression 8.",
+    fallback: TutorDisplayTextSanitizer.fallbackHint
+)
+assert(!markedExpressionFallback.lowercased().contains("marked expression"))
+let cleanedSquareRoot = TutorDisplayTextSanitizer.clean("Use ±sqrt(16), not +-8.")
+assert(cleanedSquareRoot.contains("±√16"))
+assert(!cleanedSquareRoot.contains("sqrt("))
+assert(!cleanedSquareRoot.contains("+-"))
 
 let richPresentation = SpokenHintPolicy.presentation(
     explanation: "The first product is correct, but the outside factor must also multiply the second term inside the parentheses.",

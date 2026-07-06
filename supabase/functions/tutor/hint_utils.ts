@@ -86,11 +86,13 @@ function hasValidMath(value: string, maximumExpressions: number): boolean {
 function sanitizeHintPart(value: string): string {
   if (hasValidMath(value, Number.MAX_SAFE_INTEGER)) return value;
   return value
-    .replace(/\\\((.*?)\\\)/gs, "the marked expression")
-    .replace(/\\\[(.*?)\\\]/gs, "the marked expression")
-    .replace(/\$\$?.*?\$\$?/gs, "the marked expression")
+    .replace(/\\\((?:\s*|.*?\{\s*\}.*?)\\\)/gs, "that value")
+    .replace(/\\\[(?:\s*|.*?\{\s*\}.*?)\\\]/gs, "that value")
+    .replace(/\\\((.*?)\\\)/gs, "$1")
+    .replace(/\\\[(.*?)\\\]/gs, "$1")
+    .replace(/\$\$?(.*?)\$\$?/gs, "$1")
     .replace(/\\[()]/g, "")
-    .replace(/\\[A-Za-z]+(?:\s*\{[^{}]*\})*/g, "the marked expression")
+    .replace(/\\[A-Za-z]+(?:\s*\{[^{}]*\})*/g, "that value")
     .replace(/[{}]/g, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -98,9 +100,9 @@ function sanitizeHintPart(value: string): string {
 
 export function hintToSpeech(value: string): string {
   return value
-    .replace(/\\\((.*?)\\\)/gs, "the marked expression")
-    .replace(/\\\[(.*?)\\\]/gs, "the marked expression")
-    .replace(/\$\$?.*?\$\$?/gs, "the marked expression")
+    .replace(/\\\((.*?)\\\)/gs, "that value")
+    .replace(/\\\[(.*?)\\\]/gs, "that value")
+    .replace(/\$\$?.*?\$\$?/gs, "that value")
     .replace(/\\[A-Za-z]+/g, "")
     .replace(/[{}]/g, "")
     .replace(/\s*\n\s*/g, " ")

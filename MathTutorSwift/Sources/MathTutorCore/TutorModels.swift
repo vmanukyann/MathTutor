@@ -40,10 +40,16 @@ public struct TutorObservation: Codable, Equatable, Sendable {
     public var spokenHint: String
     public var hintExplanation: String?
     public var hintAction: String?
+    public var displayHint: String?
+    public var tryStep: String?
     public var teacherNote: String
     public var workSummary: String
     public var teachSteps: [String]?
     public var finalAnswerBlocked: Bool
+    public var visionDetail: String?
+    public var observeMaxOutputTokens: Int?
+    public var promptCharacters: Int?
+    public var responseBytes: Int?
 
     public init(
         mistakeDetected: Bool,
@@ -54,10 +60,16 @@ public struct TutorObservation: Codable, Equatable, Sendable {
         spokenHint: String = "",
         hintExplanation: String? = nil,
         hintAction: String? = nil,
+        displayHint: String? = nil,
+        tryStep: String? = nil,
         teacherNote: String,
         workSummary: String,
         teachSteps: [String]? = nil,
-        finalAnswerBlocked: Bool = true
+        finalAnswerBlocked: Bool = true,
+        visionDetail: String? = nil,
+        observeMaxOutputTokens: Int? = nil,
+        promptCharacters: Int? = nil,
+        responseBytes: Int? = nil
     ) {
         self.mistakeDetected = mistakeDetected
         self.confidence = confidence
@@ -67,10 +79,16 @@ public struct TutorObservation: Codable, Equatable, Sendable {
         self.spokenHint = spokenHint
         self.hintExplanation = hintExplanation
         self.hintAction = hintAction
+        self.displayHint = displayHint
+        self.tryStep = tryStep
         self.teacherNote = teacherNote
         self.workSummary = workSummary
         self.teachSteps = teachSteps
         self.finalAnswerBlocked = finalAnswerBlocked
+        self.visionDetail = visionDetail
+        self.observeMaxOutputTokens = observeMaxOutputTokens
+        self.promptCharacters = promptCharacters
+        self.responseBytes = responseBytes
     }
 }
 

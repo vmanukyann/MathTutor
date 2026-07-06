@@ -29,6 +29,8 @@ struct LiveTutorSessionView: View {
     @State private var teachModeVariant = 0
     @State private var microphoneEnabled = true
     @State private var activeCheckID: UUID?
+    @State private var activeLatencyRequestID: String?
+    @State private var activeSpeechLatencyContext: TutorSpeechLatencyContext?
 
     private let tutorClient = SupabaseTutorClient(configuration: AppSecrets.supabase)
     private let policy = TutorPolicy(noAnswerMode: true)
@@ -65,6 +67,9 @@ struct LiveTutorSessionView: View {
                 voiceRecognizer.setTutorSpeaking(false)
             }
             await camera.start()
+            Task {
+                await prewarmEdgeFunctions()
+            }
             await voiceRecognizer.ensureListening()
             microphoneEnabled = voiceRecognizer.snapshot.permissionStatus == .authorized
                 && voiceRecognizer.snapshot.isMicrophoneAuthorized
@@ -402,16 +407,20 @@ struct LiveTutorSessionView: View {
                     TutorHintView(content: visibleHint)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 15)
         }
-        .frame(maxWidth: 720, maxHeight: 240)
-        .background(MTTheme.paleYellowNote.opacity(0.96), in: RoundedRectangle(cornerRadius: MTTheme.compactRadius, style: .continuous))
+        .frame(maxWidth: 640, maxHeight: 220)
+        .background(
+            MTTheme.paleYellowNote.opacity(0.84),
+            in: RoundedRectangle(cornerRadius: MTTheme.cardRadius, style: .continuous)
+        )
         .overlay {
-            RoundedRectangle(cornerRadius: MTTheme.compactRadius, style: .continuous)
-                .stroke(MTTheme.chemicalGold.opacity(0.55), lineWidth: 1)
+            RoundedRectangle(cornerRadius: MTTheme.cardRadius, style: .continuous)
+                .stroke(MTTheme.chemicalGold.opacity(0.32), lineWidth: 1)
         }
-        .frame(maxWidth: 560)
+        .shadow(color: .black.opacity(0.08), radius: 8, y: 3)
+        .frame(maxWidth: 640)
     }
 
     private var teachModeView: some View {
@@ -632,7 +641,13 @@ struct LiveTutorSessionView: View {
         guard Date().timeIntervalSince(lastCheckRequest) >= checkWorkCooldown else { return false }
 
         let checkID = UUID()
+        let requestID = checkID.uuidString
+        let clock = ContinuousClock()
+        let userActionStarted = clock.now
         activeCheckID = checkID
+        activeLatencyRequestID = requestID
+        activeSpeechLatencyContext = nil
+        logElevenLabsLatency("user_action_request_started", requestID: requestID)
         lastCheckRequest = Date()
         status = .thinking
         errorMessage = nil
@@ -642,24 +657,68 @@ struct LiveTutorSessionView: View {
         latestHintPresentation = nil
         latestSpokenHint = nil
         latestHint = "Checking."
-        voice.speak(latestHint)
 
         do {
-            let imageData = try await camera.captureFrame()
+            logElevenLabsLatency("camera_capture_started", requestID: requestID)
+            let cameraCaptureStarted = clock.now
+            let frame = try await camera.captureFrame()
+            let cameraCaptureFinished = clock.now
+            let captureTimeMilliseconds = durationMilliseconds(
+                from: cameraCaptureStarted,
+                to: cameraCaptureFinished
+            )
+            let imageBase64 = frame.data.base64EncodedString()
+            logElevenLabsLatency(
+                "camera_capture_finished",
+                requestID: requestID,
+                fields: [
+                    "base64_bytes": "\(imageBase64.utf8.count)",
+                    "cached_frame_age_ms": "-1",
+                    "capture_time_ms": "\(captureTimeMilliseconds)",
+                    "jpeg_bytes": "\(frame.data.count)",
+                    "jpeg_quality": "\(frame.jpegQuality)",
+                    "original_bytes": "\(frame.originalBytes)",
+                    "original_height": "\(frame.originalHeight)",
+                    "original_width": "\(frame.originalWidth)",
+                    "output_height": "\(frame.outputHeight)",
+                    "output_width": "\(frame.outputWidth)",
+                    "preset": frame.preset,
+                    "used_cached_frame": "false",
+                ]
+            )
             guard activeCheckID == checkID else { return false }
             let request = TutorObservationRequest(
-                imageBase64: imageData.base64EncodedString(),
+                imageBase64: imageBase64,
                 student: student,
                 checkNumber: session.events.count + 1,
                 noAnswerMode: true,
-                studentQuestion: studentQuestion
+                studentQuestion: studentQuestion,
+                requestID: requestID
             )
+            let tutorRequestStarted = clock.now
             var observation = try await tutorClient.observeWork(request)
+            let tutorResponseReceived = clock.now
+            activeSpeechLatencyContext = TutorSpeechLatencyContext(
+                userActionStarted: userActionStarted,
+                tutorRequestStarted: tutorRequestStarted,
+                tutorResponseReceived: tutorResponseReceived,
+                imagePreset: frame.preset,
+                imageBytes: frame.data.count,
+                visionDetail: observation.visionDetail ?? "unknown",
+                usedCachedFrame: false,
+                cachedFrameAgeMilliseconds: -1,
+                captureTimeMilliseconds: captureTimeMilliseconds,
+                observeMaxOutputTokens: observation.observeMaxOutputTokens ?? 0,
+                promptCharacters: observation.promptCharacters ?? 0,
+                responseBytes: observation.responseBytes ?? 0
+            )
             guard activeCheckID == checkID else { return false }
             let sanitizedHint = policy.sanitizedHint(observation.hint)
             if sanitizedHint != observation.hint {
                 observation.hintExplanation = nil
                 observation.hintAction = nil
+                observation.displayHint = nil
+                observation.tryStep = nil
                 observation.spokenHint = ""
             }
             observation.hint = sanitizedHint
@@ -671,9 +730,17 @@ struct LiveTutorSessionView: View {
                 latestHint = "I could not read a clear step yet. Try lining up the paper."
                 checkFailure = .couldNotRead
             } else if observation.mistakeDetected {
+                let displayHint = TutorDisplayTextSanitizer.validated(
+                    observation.displayHint ?? observation.hintExplanation ?? "",
+                    fallback: TutorDisplayTextSanitizer.fallbackHint
+                )
+                let tryStep = TutorDisplayTextSanitizer.validated(
+                    observation.tryStep ?? observation.hintAction ?? "",
+                    fallback: TutorDisplayTextSanitizer.fallbackAction
+                )
                 let presentation = SpokenHintPolicy.presentation(
-                    explanation: observation.hintExplanation,
-                    action: observation.hintAction,
+                    explanation: displayHint,
+                    action: tryStep,
                     legacyHint: observation.hint
                 )
                 latestHintPresentation = presentation
@@ -868,11 +935,17 @@ struct LiveTutorSessionView: View {
                 latestSpokenHint ?? SpokenHintPolicy.playbackText(
                     spokenHint: nil,
                     presentation: presentation
-                )
+                ),
+                requestID: activeLatencyRequestID,
+                latencyContext: activeSpeechLatencyContext
             )
             return
         }
-        voice.speak(latestHint)
+        voice.speak(
+            latestHint,
+            requestID: activeLatencyRequestID,
+            latencyContext: activeSpeechLatencyContext
+        )
     }
 
     private func askTeachModeQuestion() {
@@ -928,6 +1001,71 @@ struct LiveTutorSessionView: View {
     private var isMicrophoneActive: Bool {
         microphoneEnabled && voiceRecognizer.snapshot.isListening
     }
+}
+
+private func prewarmEdgeFunctions() async {
+    let requestID = "prewarm-\(UUID().uuidString)"
+    async let tutor: Void = prewarmEdgeFunction(
+        named: "tutor",
+        requestID: requestID
+    )
+    async let tts: Void = prewarmEdgeFunction(
+        named: "tts-elevenlabs",
+        requestID: requestID
+    )
+    _ = await (tutor, tts)
+}
+
+private func prewarmEdgeFunction(named function: String, requestID: String) async {
+    let endpoint = AppSecrets.supabase.url
+        .appendingPathComponent("functions")
+        .appendingPathComponent("v1")
+        .appendingPathComponent(function)
+    var request = URLRequest(url: endpoint)
+    request.httpMethod = "OPTIONS"
+    request.timeoutInterval = 10
+    request.setValue(AppSecrets.supabase.anonKey, forHTTPHeaderField: "apikey")
+    request.setValue(
+        "Bearer \(AppSecrets.supabase.anonKey)",
+        forHTTPHeaderField: "Authorization"
+    )
+
+    do {
+        let (_, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        logElevenLabsLatency(
+            "edge_function_prewarm_finished",
+            requestID: requestID,
+            fields: ["function": function, "status": "\(status)"]
+        )
+    } catch {
+        logElevenLabsLatency(
+            "edge_function_prewarm_failed",
+            requestID: requestID,
+            fields: ["function": function]
+        )
+    }
+}
+
+private func durationMilliseconds(
+    from start: ContinuousClock.Instant,
+    to end: ContinuousClock.Instant
+) -> Int64 {
+    let duration = start.duration(to: end)
+    return duration.components.seconds * 1_000
+        + duration.components.attoseconds / 1_000_000_000_000_000
+}
+
+private func logElevenLabsLatency(
+    _ event: String,
+    requestID: String,
+    fields: [String: String] = [:]
+) {
+    let suffix = fields.sorted { $0.key < $1.key }
+        .map { "\($0.key)=\($0.value)" }
+        .joined(separator: " ")
+    let message = "mathtutor_elevenlabs_latency event=\(event) request_id=\(requestID)"
+    print(suffix.isEmpty ? message : "\(message) \(suffix)")
 }
 
 private enum CheckFailure {
