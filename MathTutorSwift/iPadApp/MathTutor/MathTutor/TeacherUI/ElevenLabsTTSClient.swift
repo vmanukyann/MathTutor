@@ -44,6 +44,11 @@ final class ElevenLabsTTSClient: VoiceTutorProvider, @unchecked Sendable {
     }
 
     func audio(for text: String, requestID: String) async throws -> Data {
+        if TTSLaunchArguments.pocketWasRequested {
+            print("mathtutor_tts_provider ERROR: ElevenLabs called during Pocket diagnostic")
+            throw ElevenLabsTTSClientError.calledDuringPocketDiagnostic
+        }
+
         let normalizedText = MathSpeechNormalizer.normalize(text)
         guard !normalizedText.isEmpty else {
             throw ElevenLabsTTSClientError.emptyText
@@ -102,6 +107,7 @@ private enum ElevenLabsTTSClientError: LocalizedError {
     case invalidResponse
     case edgeFunctionFailed(status: Int, message: String)
     case emptyAudio
+    case calledDuringPocketDiagnostic
 
     var errorDescription: String? {
         switch self {
@@ -113,6 +119,8 @@ private enum ElevenLabsTTSClientError: LocalizedError {
             "The TTS function failed (\(status)): \(message)"
         case .emptyAudio:
             "The TTS function returned no audio."
+        case .calledDuringPocketDiagnostic:
+            "ElevenLabs was called while Pocket TTS was requested."
         }
     }
 }

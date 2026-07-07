@@ -18,11 +18,19 @@ struct MathTutorApp: App {
                     guard !didStartTtsDiagnostic,
                           ProcessInfo.processInfo.arguments.contains(
                               "--run-elevenlabs-tts-diagnostic"
+                          ) || ProcessInfo.processInfo.arguments.contains(
+                              "--run-pocket-tts-diagnostic"
                           ) else {
                         return
                     }
                     didStartTtsDiagnostic = true
-                    appModel.voiceTutor.runElevenLabsTtsDiagnostic()
+                    if ProcessInfo.processInfo.arguments.contains(
+                        "--run-pocket-tts-diagnostic"
+                    ) {
+                        appModel.voiceTutor.runPocketTtsDiagnostic()
+                    } else {
+                        appModel.voiceTutor.runElevenLabsTtsDiagnostic()
+                    }
                     #endif
                 }
                 .onChange(of: scenePhase) { _, phase in
