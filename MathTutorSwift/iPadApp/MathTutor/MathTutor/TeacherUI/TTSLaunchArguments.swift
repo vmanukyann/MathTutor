@@ -20,7 +20,7 @@ struct TTSLaunchArguments {
     }
 
     var requestsPocketProvider: Bool {
-        pocketDiagnosticRequested || requestedProvider == "pocket"
+        requestedProvider == "pocket"
     }
 
     static var pocketWasRequested: Bool {

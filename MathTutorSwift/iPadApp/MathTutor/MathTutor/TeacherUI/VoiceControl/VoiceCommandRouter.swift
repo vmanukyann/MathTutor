@@ -22,6 +22,7 @@ enum VoiceRoutedAction: Equatable, Sendable {
     case repeatHint
     case differentWay
     case askQuestion
+    case followUp
     case checkWork
     case confirmHearing
     case connectAirPlay
@@ -41,6 +42,7 @@ enum VoiceRoutedAction: Equatable, Sendable {
         case .repeatHint: "Repeat hint"
         case .differentWay: "Different way"
         case .askQuestion: "Ask question"
+        case .followUp: "Follow up"
         case .checkWork: "Check work"
         case .confirmHearing: "Confirm hearing"
         case .connectAirPlay: "Connect AirPlay"
@@ -108,6 +110,14 @@ struct VoiceCommandRouter: Sendable {
                 return .askQuestion
             default:
                 return .ignore("question requires an active session")
+            }
+
+        case .followUp:
+            switch context.location {
+            case .liveSession, .teachMode:
+                return .followUp
+            default:
+                return .ignore("follow-up requires an active session")
             }
 
         case .checkWork:

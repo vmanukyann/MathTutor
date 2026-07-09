@@ -29,6 +29,26 @@ final class ExternalDisplayController {
                 Task { @MainActor [weak self] in
                     self?.refreshExternalDisplay()
                 }
+            },
+            center.addObserver(
+                forName: UIScreen.didConnectNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                print("mathtutor_airplay external_screen_connected")
+                Task { @MainActor [weak self] in
+                    self?.refreshExternalDisplay()
+                }
+            },
+            center.addObserver(
+                forName: UIScreen.didDisconnectNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                print("mathtutor_airplay external_screen_disconnected")
+                Task { @MainActor [weak self] in
+                    self?.refreshExternalDisplay()
+                }
             }
         ]
 
@@ -48,9 +68,13 @@ final class ExternalDisplayController {
             scene.session.role.mtIsExternalDisplay && scene.activationState != .unattached
         }
         if hasExternalScene {
-            print("MathTutorDisplay external scene connected")
             pendingDisconnect?.cancel()
             pendingDisconnect = nil
+            if appModel.externalDisplay.isConnected {
+                print("mathtutor_airplay external_scene_reused")
+            } else {
+                print("mathtutor_airplay external_screen_connected")
+            }
             appModel.setExternalDisplayConnected(true)
             return
         }
@@ -63,7 +87,7 @@ final class ExternalDisplayController {
                 scene.session.role.mtIsExternalDisplay && scene.activationState != .unattached
             }
             if stillDisconnected {
-                print("MathTutorDisplay external scene disconnected")
+                print("mathtutor_airplay external_screen_disconnected")
                 appModel.setExternalDisplayConnected(false)
             }
             self.pendingDisconnect = nil

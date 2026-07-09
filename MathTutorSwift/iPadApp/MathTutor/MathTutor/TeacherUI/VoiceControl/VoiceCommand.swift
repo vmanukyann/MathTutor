@@ -8,6 +8,7 @@ enum VoiceCommand: String, CaseIterable, Identifiable, Sendable {
     case repeatHint
     case differentWay
     case askQuestion
+    case followUp
     case checkWork
     case hearingTest
     case connectAirPlay
@@ -29,6 +30,7 @@ enum VoiceCommand: String, CaseIterable, Identifiable, Sendable {
         case .repeatHint: "Repeat"
         case .differentWay: "Different way"
         case .askQuestion: "Question"
+        case .followUp: "Follow up"
         case .checkWork: "Check work"
         case .hearingTest: "Hearing test"
         case .connectAirPlay: "Connect AirPlay"
@@ -50,6 +52,7 @@ enum VoiceCommand: String, CaseIterable, Identifiable, Sendable {
         case .repeatHint: "speaker.wave.2"
         case .differentWay: "arrow.triangle.2.circlepath"
         case .askQuestion: "questionmark"
+        case .followUp: "bubble.left.and.text.bubble.right"
         case .checkWork: "viewfinder"
         case .hearingTest: "ear"
         case .connectAirPlay: "airplayvideo"
@@ -101,6 +104,8 @@ enum VoiceCommandParser {
             command = .returnToWork
         } else if containsAny(normalized, teachPhrases) {
             command = .enterTeachMode
+        } else if containsAny(normalized, followUpPhrases) {
+            command = .followUp
         } else if containsAny(normalized, questionPhrases) {
             command = .askQuestion
         } else if containsAny(normalized, nextPhrases) {
@@ -224,6 +229,28 @@ enum VoiceCommandParser {
         "can i ask something",
         "wait",
         "hold on"
+    ]
+
+    private static let followUpPhrases = [
+        "follow up",
+        "followup",
+        "i have a follow up",
+        "follow up question",
+        "followup question",
+        "another question",
+        "wait why",
+        "why did you say that",
+        "what do you mean",
+        "can you explain that",
+        "explain that again",
+        "i still dont get it",
+        "i still do not get it",
+        "can you say it another way",
+        "what about this part",
+        "how did you get that",
+        "why is that true",
+        "can i ask something",
+        "i have a question about that"
     ]
 
     private static let checkWorkPhrases = [

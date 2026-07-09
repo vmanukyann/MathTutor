@@ -30,7 +30,10 @@ struct LiveTutorSessionView: View {
     @State private var microphoneEnabled = true
     @State private var activeCheckID: UUID?
     @State private var activeLatencyRequestID: String?
+    @State private var activeFollowUpRequestID: String?
     @State private var activeSpeechLatencyContext: TutorSpeechLatencyContext?
+    @State private var recentTutorContext: RecentTutorContext?
+    @State private var isAwaitingFollowUpQuestion = false
 
     private let tutorClient = SupabaseTutorClient(configuration: AppSecrets.supabase)
     private let policy = TutorPolicy(noAnswerMode: true)
@@ -60,11 +63,16 @@ struct LiveTutorSessionView: View {
         }
         .task {
             UIApplication.shared.isIdleTimerDisabled = true
+            print("mathtutor_airplay idle_timer_disabled")
             voice.onSpeechStarted = {
                 voiceRecognizer.setTutorSpeaking(true)
+                if let activeFollowUpRequestID {
+                    logFollowUp("playback_started", requestID: activeFollowUpRequestID)
+                }
             }
             voice.onSpeechFinished = {
                 voiceRecognizer.setTutorSpeaking(false)
+                activeFollowUpRequestID = nil
             }
             await camera.start()
             Task {
@@ -98,6 +106,7 @@ struct LiveTutorSessionView: View {
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
+            print("mathtutor_airplay idle_timer_enabled")
             activeCheckID = nil
             camera.stop()
             voice.stop()
@@ -636,9 +645,16 @@ struct LiveTutorSessionView: View {
         return steps.allSatisfy(LaTeXNormalizer.isMathOnlyExpression)
     }
 
-    private func checkWork(studentQuestion: String? = nil) async -> Bool {
+    private func checkWork(
+        studentQuestion: String? = nil,
+        previousTutorContext: String? = nil,
+        reusePreviousFrame: Bool = false,
+        isFollowUp: Bool = false
+    ) async -> Bool {
         guard status != .thinking else { return false }
-        guard Date().timeIntervalSince(lastCheckRequest) >= checkWorkCooldown else { return false }
+        guard isFollowUp || Date().timeIntervalSince(lastCheckRequest) >= checkWorkCooldown else {
+            return false
+        }
 
         let checkID = UUID()
         let requestID = checkID.uuidString
@@ -648,6 +664,10 @@ struct LiveTutorSessionView: View {
         activeLatencyRequestID = requestID
         activeSpeechLatencyContext = nil
         logElevenLabsLatency("user_action_request_started", requestID: requestID)
+        if isFollowUp {
+            logFollowUp("request_started", requestID: requestID)
+            activeFollowUpRequestID = requestID
+        }
         lastCheckRequest = Date()
         status = .thinking
         errorMessage = nil
@@ -659,21 +679,39 @@ struct LiveTutorSessionView: View {
         latestHint = "Checking."
 
         do {
+            let reusedContext = reusePreviousFrame ? recentTutorContext : nil
+            if isFollowUp {
+                logFollowUp(
+                    "reused_previous_context",
+                    requestID: requestID,
+                    fields: ["reused_previous_context": "\(reusedContext != nil)"]
+                )
+            }
             logElevenLabsLatency("camera_capture_started", requestID: requestID)
             let cameraCaptureStarted = clock.now
-            let frame = try await camera.captureFrame()
+            let frame: CapturedCameraFrame
+            if let reusedFrame = reusedContext?.frame {
+                frame = reusedFrame
+            } else {
+                frame = try await camera.captureFrame(
+                    preferPreparedFrame: true,
+                    maxPreparedFrameAgeMilliseconds: 900
+                )
+            }
             let cameraCaptureFinished = clock.now
             let captureTimeMilliseconds = durationMilliseconds(
                 from: cameraCaptureStarted,
                 to: cameraCaptureFinished
             )
-            let imageBase64 = frame.data.base64EncodedString()
+            let imageBase64 = reusedContext?.imageBase64 ?? frame.data.base64EncodedString()
+            let cachedFrameAge = frame.ageMilliseconds()
+            let usedCachedFrame = reusedContext != nil || frame.source == "prepared_video"
             logElevenLabsLatency(
                 "camera_capture_finished",
                 requestID: requestID,
                 fields: [
                     "base64_bytes": "\(imageBase64.utf8.count)",
-                    "cached_frame_age_ms": "-1",
+                    "cached_frame_age_ms": "\(cachedFrameAge)",
                     "capture_time_ms": "\(captureTimeMilliseconds)",
                     "jpeg_bytes": "\(frame.data.count)",
                     "jpeg_quality": "\(frame.jpegQuality)",
@@ -683,7 +721,8 @@ struct LiveTutorSessionView: View {
                     "output_height": "\(frame.outputHeight)",
                     "output_width": "\(frame.outputWidth)",
                     "preset": frame.preset,
-                    "used_cached_frame": "false",
+                    "source": frame.source,
+                    "used_cached_frame": "\(usedCachedFrame)",
                 ]
             )
             guard activeCheckID == checkID else { return false }
@@ -693,6 +732,7 @@ struct LiveTutorSessionView: View {
                 checkNumber: session.events.count + 1,
                 noAnswerMode: true,
                 studentQuestion: studentQuestion,
+                previousTutorContext: previousTutorContext,
                 requestID: requestID
             )
             let tutorRequestStarted = clock.now
@@ -705,12 +745,14 @@ struct LiveTutorSessionView: View {
                 imagePreset: frame.preset,
                 imageBytes: frame.data.count,
                 visionDetail: observation.visionDetail ?? "unknown",
-                usedCachedFrame: false,
-                cachedFrameAgeMilliseconds: -1,
+                usedCachedFrame: usedCachedFrame,
+                cachedFrameAgeMilliseconds: cachedFrameAge,
                 captureTimeMilliseconds: captureTimeMilliseconds,
                 observeMaxOutputTokens: observation.observeMaxOutputTokens ?? 0,
                 promptCharacters: observation.promptCharacters ?? 0,
-                responseBytes: observation.responseBytes ?? 0
+                responseBytes: observation.responseBytes ?? 0,
+                isFollowUp: isFollowUp,
+                reusedPreviousContext: reusedContext != nil
             )
             guard activeCheckID == checkID else { return false }
             let sanitizedHint = policy.sanitizedHint(observation.hint)
@@ -760,6 +802,14 @@ struct LiveTutorSessionView: View {
                     tutorMessage: latestHint
                 )
             )
+            recentTutorContext = RecentTutorContext(
+                imageBase64: imageBase64,
+                frame: frame,
+                observation: observation,
+                visibleHint: latestHint,
+                spokenHint: latestSpokenHint,
+                createdAt: Date()
+            )
             if appModel.externalDisplay.isConnected {
                 appModel.showExternalTeachMode(student: student, lines: teachModeLines)
             }
@@ -790,6 +840,24 @@ struct LiveTutorSessionView: View {
         guard let command = voiceRecognizer.lastRecognizedCommand else { return }
         let action = appModel.voiceRouter.route(command, in: voiceRouteContext)
         voiceRecognizer.recordRoutedAction(action.displayName)
+        let phrase = voiceRecognizer.snapshot.lastTranscript
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if isAwaitingFollowUpQuestion {
+            switch action {
+            case .askQuestion, .followUp:
+                isAwaitingFollowUpQuestion = false
+                submitVoiceFollowUp(question: phrase)
+                return
+            case .repeatHint:
+                speakCurrentHint()
+                return
+            case .emergencyStop, .endSession:
+                isAwaitingFollowUpQuestion = false
+            default:
+                break
+            }
+        }
 
         switch action {
         case .enterTeachMode:
@@ -802,6 +870,8 @@ struct LiveTutorSessionView: View {
             speakCurrentHint()
         case .askQuestion:
             handleVoiceQuestion()
+        case .followUp:
+            handleVoiceFollowUp(phrase: phrase)
         case .checkWork:
             Task { _ = await checkWork() }
         case .confirmHearing:
@@ -885,6 +955,69 @@ struct LiveTutorSessionView: View {
             await showHowToDoThis(question: question.isEmpty ? nil : question)
             voiceRecognizer.setQuestionMode(false)
         }
+    }
+
+    private func handleVoiceFollowUp(phrase: String) {
+        print("mathtutor_voice_intent intent=follow_up phrase=\"\(phrase)\"")
+        guard let recentTutorContext else {
+            latestHint = "Ask your question after I check your work once."
+            voice.speak(latestHint)
+            return
+        }
+        if shouldWaitForNextFollowUpUtterance(phrase) {
+            isAwaitingFollowUpQuestion = true
+            latestHint = "Go ahead—ask your follow-up."
+            logFollowUp(
+                "awaiting_question",
+                requestID: "pending",
+                fields: ["reused_previous_context": "true"]
+            )
+            voice.speak(latestHint)
+            return
+        }
+
+        submitVoiceFollowUp(question: phrase, context: recentTutorContext)
+    }
+
+    private func submitVoiceFollowUp(
+        question: String,
+        context explicitContext: RecentTutorContext? = nil
+    ) {
+        let followUpContext = explicitContext ?? recentTutorContext
+        guard let followUpContext else {
+            latestHint = "Ask your question after I check your work once."
+            voice.speak(latestHint)
+            return
+        }
+        let trimmedQuestion = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        print("mathtutor_voice_intent intent=follow_up phrase=\"\(trimmedQuestion)\"")
+        Task {
+            _ = await checkWork(
+                studentQuestion: trimmedQuestion.isEmpty ? "follow-up question" : trimmedQuestion,
+                previousTutorContext: followUpContext.promptContext,
+                reusePreviousFrame: true,
+                isFollowUp: true
+            )
+        }
+    }
+
+    private func shouldWaitForNextFollowUpUtterance(_ phrase: String) -> Bool {
+        let normalized = phrase
+            .lowercased()
+            .replacingOccurrences(of: "'", with: "")
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return [
+            "follow up",
+            "followup",
+            "i have a follow up",
+            "follow up question",
+            "followup question",
+            "another question",
+            "can i ask something",
+        ].contains(normalized)
     }
 
     private func requestTeachMode() {
@@ -1068,9 +1201,43 @@ private func logElevenLabsLatency(
     print(suffix.isEmpty ? message : "\(message) \(suffix)")
 }
 
+private func logFollowUp(
+    _ event: String,
+    requestID: String,
+    fields: [String: String] = [:]
+) {
+    let suffix = fields.sorted { $0.key < $1.key }
+        .map { "\($0.key)=\($0.value)" }
+        .joined(separator: " ")
+    let message = "mathtutor_followup event=\(event) request_id=\(requestID)"
+    print(suffix.isEmpty ? message : "\(message) \(suffix)")
+}
+
 private enum CheckFailure {
     case couldNotRead
     case backend
+}
+
+private struct RecentTutorContext {
+    let imageBase64: String
+    let frame: CapturedCameraFrame
+    let observation: TutorObservation
+    let visibleHint: String
+    let spokenHint: String?
+    let createdAt: Date
+
+    var promptContext: String {
+        [
+            "Previous work summary: \(observation.workSummary)",
+            "Previous visible hint: \(visibleHint)",
+            "Previous spoken hint: \(spokenHint ?? "")",
+            "Previous misconception: \(observation.misconceptionType.rawValue)",
+            "Previous confidence: \(observation.confidence.rawValue)",
+            "Context age seconds: \(max(0, Int(Date().timeIntervalSince(createdAt))))",
+        ]
+        .filter { !$0.hasSuffix(": ") }
+        .joined(separator: "\n")
+    }
 }
 
 private struct ScanFrameGuide: View {

@@ -525,17 +525,24 @@ function observeWorkPrompt(student: any, session: any): string {
   const studentQuestion = typeof session?.student_question === "string"
     ? session.student_question.trim().slice(0, 300)
     : "";
+  const previousTutorContext =
+    typeof session?.previous_tutor_context === "string"
+      ? session.previous_tutor_context.trim().slice(0, 900)
+      : "";
 
   return `
 You are MathTutor analyzing ${name}'s handwritten math.
 Context: level=${level}; prior_misconceptions=${misconceptions};
 check=${checkNumber}; no_answer=${noAnswerMode}.
 ${studentQuestion ? `Student question: ${JSON.stringify(studentQuestion)}` : ""}
+${previousTutorContext ? `Previous tutor context: ${previousTutorContext}` : ""}
 
 ${OPTIMIZED_TUTOR_INSTRUCTIONS}
 
 Output constraints:
 - Return only the requested schema object.
+- If this is a follow-up question, answer it using the previous tutor context
+  and visible work. Do not restart as a fresh scan unless the context is empty.
 - display_hint: one concise, specific plain-text sentence.
 - try_step: exactly one short, actionable plain-text sentence.
 - spoken_hint: one plain-English sentence, 15–30 words, no notation.

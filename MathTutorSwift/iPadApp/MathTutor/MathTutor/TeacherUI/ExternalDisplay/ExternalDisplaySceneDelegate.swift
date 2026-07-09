@@ -18,6 +18,7 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
         if let appModel = AppModel.shared {
             Self.bind(window, to: appModel)
             appModel.setExternalDisplayConnected(true)
+            print("mathtutor_airplay external_scene_created")
         } else {
             window.rootViewController = UIHostingController(rootView: ExternalDisplayStandbyView())
         }
@@ -37,6 +38,7 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
     static func bindExistingWindows(to appModel: AppModel) {
         for window in connectedWindows.values {
             bind(window, to: appModel)
+            print("mathtutor_airplay external_scene_reused")
         }
         appModel.externalDisplayController.refreshExternalDisplay()
     }

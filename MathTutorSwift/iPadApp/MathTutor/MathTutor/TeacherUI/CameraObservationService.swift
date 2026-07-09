@@ -3,7 +3,7 @@ import Combine
 import ObjectiveC
 import UIKit
 
-struct CapturedCameraFrame {
+struct CapturedCameraFrame: Sendable {
     let data: Data
     let originalWidth: Int
     let originalHeight: Int
@@ -12,6 +12,12 @@ struct CapturedCameraFrame {
     let originalBytes: Int
     let jpegQuality: Double
     let preset: String
+    let capturedAt: Date
+    let source: String
+
+    func ageMilliseconds(now: Date = Date()) -> Int {
+        max(0, Int(now.timeIntervalSince(capturedAt) * 1_000))
+    }
 }
 
 private struct CameraCompressionPreset {
@@ -53,6 +59,9 @@ final class CameraObservationService: NSObject, ObservableObject {
 
     let session = AVCaptureSession()
     private let photoOutput = AVCapturePhotoOutput()
+    private let videoOutput = AVCaptureVideoDataOutput()
+    private let videoOutputQueue = DispatchQueue(label: "MathTutor.camera.video")
+    private var latestPreparedFrame: CapturedCameraFrame?
 
     func start() async {
         #if targetEnvironment(simulator)
@@ -79,7 +88,23 @@ final class CameraObservationService: NSObject, ObservableObject {
         }
     }
 
-    func captureFrame() async throws -> CapturedCameraFrame {
+    func freshPreparedFrame(maxAgeMilliseconds: Int = 900) -> CapturedCameraFrame? {
+        guard let latestPreparedFrame,
+              latestPreparedFrame.ageMilliseconds() <= maxAgeMilliseconds else {
+            return nil
+        }
+        return latestPreparedFrame
+    }
+
+    func captureFrame(
+        preferPreparedFrame: Bool = true,
+        maxPreparedFrameAgeMilliseconds: Int = 900
+    ) async throws -> CapturedCameraFrame {
+        if preferPreparedFrame,
+           let frame = freshPreparedFrame(maxAgeMilliseconds: maxPreparedFrameAgeMilliseconds) {
+            return frame
+        }
+
         let preset = CameraCompressionPreset.active
         #if targetEnvironment(simulator)
         guard !session.outputs.isEmpty else {
@@ -132,9 +157,18 @@ final class CameraObservationService: NSObject, ObservableObject {
             session.addInput(input)
         }
 
-        if session.outputs.isEmpty, session.canAddOutput(photoOutput) {
+        if !session.outputs.contains(photoOutput), session.canAddOutput(photoOutput) {
             session.addOutput(photoOutput)
             photoOutput.maxPhotoQualityPrioritization = .speed
+        }
+
+        if !session.outputs.contains(videoOutput), session.canAddOutput(videoOutput) {
+            videoOutput.alwaysDiscardsLateVideoFrames = true
+            videoOutput.videoSettings = [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+            ]
+            session.addOutput(videoOutput)
+            videoOutput.setSampleBufferDelegate(self, queue: videoOutputQueue)
         }
 
         session.commitConfiguration()
@@ -189,10 +223,71 @@ final class CameraObservationService: NSObject, ObservableObject {
             outputHeight: Int(size.height),
             originalBytes: data.count,
             jpegQuality: preset.jpegQuality,
-            preset: preset.name
+            preset: preset.name,
+            capturedAt: Date(),
+            source: "simulator"
         )
     }
     #endif
+
+}
+
+private enum PreparedCameraFrameBuilder {
+    private static let lock = NSLock()
+    private static let ciContext = CIContext()
+    private static var lastPreparedFrameAt = Date.distantPast
+    private static let framePreparationInterval: TimeInterval = 0.35
+
+    static func frame(from sampleBuffer: CMSampleBuffer) -> CapturedCameraFrame? {
+        let now = Date()
+        lock.lock()
+        let shouldPrepare = now.timeIntervalSince(lastPreparedFrameAt) >= framePreparationInterval
+        if shouldPrepare {
+            lastPreparedFrameAt = now
+        }
+        lock.unlock()
+        guard shouldPrepare,
+              let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+            return nil
+        }
+
+        let preset = CameraCompressionPreset.active
+        let baseImage = CIImage(cvPixelBuffer: pixelBuffer).oriented(.right)
+        guard let cgImage = ciContext.createCGImage(baseImage, from: baseImage.extent) else {
+            return nil
+        }
+        let scale = min(
+            1,
+            preset.maximumDimension / max(baseImage.extent.width, baseImage.extent.height)
+        )
+        let outputSize = CGSize(
+            width: max(1, floor(baseImage.extent.width * scale)),
+            height: max(1, floor(baseImage.extent.height * scale))
+        )
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        format.preferredRange = .standard
+        let renderer = UIGraphicsImageRenderer(size: outputSize, format: format)
+        let image = renderer.image { _ in
+            UIImage(cgImage: cgImage).draw(in: CGRect(origin: .zero, size: outputSize))
+        }
+        guard let data = image.jpegData(compressionQuality: preset.jpegQuality) else {
+            return nil
+        }
+        return CapturedCameraFrame(
+            data: data,
+            originalWidth: Int(baseImage.extent.width),
+            originalHeight: Int(baseImage.extent.height),
+            outputWidth: Int(outputSize.width),
+            outputHeight: Int(outputSize.height),
+            originalBytes: CVPixelBufferGetDataSize(pixelBuffer),
+            jpegQuality: preset.jpegQuality,
+            preset: preset.name,
+            capturedAt: now,
+            source: "prepared_video"
+        )
+    }
 }
 
 private final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
@@ -244,8 +339,25 @@ private final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegat
             outputHeight: resized.cgImage?.height ?? Int(resized.size.height * resized.scale),
             originalBytes: data.count,
             jpegQuality: preset.jpegQuality,
-            preset: preset.name
+            preset: preset.name,
+            capturedAt: Date(),
+            source: "photo_capture"
         )))
+    }
+}
+
+extension CameraObservationService: AVCaptureVideoDataOutputSampleBufferDelegate {
+    nonisolated func captureOutput(
+        _ output: AVCaptureOutput,
+        didOutput sampleBuffer: CMSampleBuffer,
+        from connection: AVCaptureConnection
+    ) {
+        guard let frame = PreparedCameraFrameBuilder.frame(from: sampleBuffer) else {
+            return
+        }
+        Task { @MainActor [weak self] in
+            self?.latestPreparedFrame = frame
+        }
     }
 }
 

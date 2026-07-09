@@ -8,6 +8,7 @@ final class AppModel: ObservableObject {
 
     enum Route {
         case studentPicker
+        case airPlayChoice(StudentProfile)
         case preparingSession(StudentProfile)
         case liveSession(StudentProfile)
         case reflection(TutoringSession)
@@ -56,6 +57,10 @@ final class AppModel: ObservableObject {
     }
 
     func select(_ student: StudentProfile) {
+        route = .airPlayChoice(student)
+    }
+
+    func continueAfterAirPlayChoice(for student: StudentProfile) {
         route = voiceTutor.isReady ? .liveSession(student) : .preparingSession(student)
     }
 

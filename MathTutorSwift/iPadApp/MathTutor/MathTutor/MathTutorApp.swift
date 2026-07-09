@@ -6,6 +6,7 @@ struct MathTutorApp: App {
     @StateObject private var appModel = AppModel()
     #if DEBUG
     @State private var didStartTtsDiagnostic = false
+    @State private var pocketDiagnosticVoiceTutor: VoiceTutor?
     #endif
 
     var body: some Scene {
@@ -27,7 +28,9 @@ struct MathTutorApp: App {
                     if ProcessInfo.processInfo.arguments.contains(
                         "--run-pocket-tts-diagnostic"
                     ) {
-                        appModel.voiceTutor.runPocketTtsDiagnostic()
+                        let diagnosticVoiceTutor = VoiceTutor.makePocketDiagnosticTutor()
+                        pocketDiagnosticVoiceTutor = diagnosticVoiceTutor
+                        diagnosticVoiceTutor.runPocketTtsDiagnostic()
                     } else {
                         appModel.voiceTutor.runElevenLabsTtsDiagnostic()
                     }

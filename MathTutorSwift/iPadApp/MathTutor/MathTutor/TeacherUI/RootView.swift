@@ -9,6 +9,8 @@ struct RootView: View {
             switch appModel.route {
             case .studentPicker:
                 StudentPickerView()
+            case .airPlayChoice(let student):
+                AirPlayChoiceView(student: student)
             case .preparingSession(let student):
                 VoiceLoadingView(student: student)
             case .liveSession(let student):

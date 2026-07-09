@@ -14,6 +14,8 @@ struct TutorSpeechLatencyContext {
     let observeMaxOutputTokens: Int
     let promptCharacters: Int
     let responseBytes: Int
+    let isFollowUp: Bool
+    let reusedPreviousContext: Bool
 }
 
 @MainActor
@@ -296,6 +298,10 @@ private final class VoiceLatencyTrace {
         log(prefix: "mathtutor_pockettts_latency", event: event, fields: fields)
     }
 
+    func logFollowUp(_ event: String, fields: [String: String] = [:]) {
+        log(prefix: "mathtutor_followup", event: event, fields: fields)
+    }
+
     private func log(prefix: String, event: String, fields: [String: String]) {
         let elapsed = startedAt.duration(to: clock.now)
         let milliseconds = elapsed.components.seconds * 1_000
@@ -313,13 +319,15 @@ private final class VoiceLatencyTrace {
         audioReceivedAt: ContinuousClock.Instant,
         playbackStartedAt: ContinuousClock.Instant
     ) {
-        log("full_path_timing_summary", fields: [
+        let fields = [
             "cached_frame_age_ms": "\(context.cachedFrameAgeMilliseconds)",
             "capture_time_ms": "\(context.captureTimeMilliseconds)",
             "image_bytes": "\(context.imageBytes)",
             "image_preset": context.imagePreset,
+            "is_follow_up": "\(context.isFollowUp)",
             "observe_max_output_tokens": "\(context.observeMaxOutputTokens)",
             "prompt_chars": "\(context.promptCharacters)",
+            "reused_previous_context": "\(context.reusedPreviousContext)",
             "response_bytes": "\(context.responseBytes)",
             "user_action_to_tutor_request_ms": milliseconds(
                 from: context.userActionStarted,
@@ -347,7 +355,11 @@ private final class VoiceLatencyTrace {
             ),
             "vision_detail": context.visionDetail,
             "used_cached_frame": "\(context.usedCachedFrame)",
-        ])
+        ]
+        log("full_path_timing_summary", fields: fields)
+        if context.isFollowUp {
+            logFollowUp("timing_summary", fields: fields)
+        }
     }
 
     private func milliseconds(
@@ -376,6 +388,13 @@ extension VoiceTutor {
             requestID: "pocket_tts_diagnostic"
         )
     }
+
+    static func makePocketDiagnosticTutor() -> VoiceTutor {
+        print("mathtutor_tts_provider selected=pocket reason=pocket_diagnostic_only")
+        print("mathtutor_tts_provider fallback=disabled")
+        print("mathtutor_pockettts_latency event=provider_selected provider=pocket fallback=disabled reason=pocket_diagnostic_only")
+        return VoiceTutor(provider: PocketTTSProvider.shared)
+    }
 }
 #endif
 
@@ -391,8 +410,7 @@ private enum VoiceTutorProviderFactory {
         print("mathtutor_tts_provider pocket_fallback=false")
         #if DEBUG
         if parsed.requestsPocketProvider {
-            print("mathtutor_tts_provider selected=pocket")
-            print("mathtutor_tts_provider reason=explicit_debug_launch_arg")
+            print("mathtutor_tts_provider selected=pocket reason=explicit_debug_launch_arg")
             print("mathtutor_tts_provider fallback=disabled")
             print("mathtutor_pockettts_latency event=provider_selected provider=pocket fallback=disabled")
             return VoiceTutorProviderSelection(
@@ -408,6 +426,8 @@ private enum VoiceTutorProviderFactory {
             print("mathtutor_tts_provider selected=elevenlabs reason=explicit_launch_arg")
         } else if let requestedProvider = parsed.requestedProvider {
             print("mathtutor_tts_provider selected=elevenlabs reason=unknown_tts_provider value=\(requestedProvider)")
+        } else if parsed.pocketDiagnosticRequested {
+            print("mathtutor_tts_provider selected=elevenlabs reason=default pocket_diagnostic_only=true")
         } else {
             print("mathtutor_tts_provider selected=elevenlabs reason=default")
         }
