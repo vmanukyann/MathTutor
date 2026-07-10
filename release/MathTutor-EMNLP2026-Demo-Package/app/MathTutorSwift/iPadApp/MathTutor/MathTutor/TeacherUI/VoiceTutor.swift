@@ -1,6 +1,5 @@
 import AVFoundation
 import Combine
-import UIKit
 
 struct TutorSpeechLatencyContext {
     let userActionStarted: ContinuousClock.Instant
@@ -26,7 +25,6 @@ final class VoiceTutor: NSObject, ObservableObject {
 
     var onSpeechStarted: (() -> Void)?
     var onSpeechFinished: (() -> Void)?
-    var onSpeechCompleted: ((String?, Bool) -> Void)?
 
     private let provider: any VoiceTutorProvider
     private let usesPocketLatencyLogs: Bool
@@ -116,7 +114,6 @@ final class VoiceTutor: NSObject, ObservableObject {
                 } else {
                     trace.log("tts_request_cancelled")
                 }
-                self?.onSpeechCompleted?(trace.id, false)
             } catch {
                 guard let self, self.playbackID == activePlaybackID else {
                     return
@@ -133,15 +130,12 @@ final class VoiceTutor: NSObject, ObservableObject {
                         "error": error.localizedDescription,
                     ])
                 }
-                self.onSpeechCompleted?(trace.id, false)
             }
         }
     }
 
     func stop() {
         let shouldNotify = didBeginSpeech
-        let hadPendingSynthesis = synthesisTask != nil
-        let stoppedRequestID = latencyTrace?.id
         playbackID = UUID()
         synthesisTask?.cancel()
         synthesisTask = nil
@@ -161,9 +155,6 @@ final class VoiceTutor: NSObject, ObservableObject {
                 ])
             }
             onSpeechFinished?()
-            onSpeechCompleted?(stoppedRequestID, false)
-        } else if hadPendingSynthesis {
-            onSpeechCompleted?(stoppedRequestID, false)
         }
         currentPlaybackUsesPocketLatencyLogs = false
     }
@@ -201,7 +192,6 @@ final class VoiceTutor: NSObject, ObservableObject {
         } else {
             trace.log("playback_started")
         }
-        logAudioSession("playback_started", requestID: trace.id)
         if let latencyContext {
             trace.logSummary(
                 context: latencyContext,
@@ -214,52 +204,8 @@ final class VoiceTutor: NSObject, ObservableObject {
 
     private func configureAudioSession() {
         let session = AVAudioSession.sharedInstance()
-        do {
-            try session.setCategory(.playback, mode: .spokenAudio, options: [])
-            try session.setActive(true)
-            logAudioSession("configured", requestID: latencyTrace?.id)
-        } catch {
-            print(
-                "mathtutor_audio_session event=configure_failed "
-                    + "request_id=\(latencyTrace?.id ?? "none") "
-                    + "error=\"\(error.localizedDescription)\" "
-                    + "screen_captured=\(UIScreen.main.isCaptured)"
-            )
-        }
-    }
-
-    private func logAudioSession(_ event: String, requestID: String?) {
-        let session = AVAudioSession.sharedInstance()
-        let outputs = session.currentRoute.outputs
-            .map { "\($0.portType.rawValue):\($0.portName)" }
-            .joined(separator: "|")
-        let options = audioSessionOptionsDescription(session.categoryOptions)
-        print(
-            "mathtutor_audio_session event=\(event) "
-                + "request_id=\(requestID ?? "none") "
-                + "category=\(session.category.rawValue) "
-                + "mode=\(session.mode.rawValue) "
-                + "options=\(options) "
-                + "output_route=\"\(outputs)\" "
-                + "screen_captured=\(UIScreen.main.isCaptured)"
-        )
-    }
-
-    private func audioSessionOptionsDescription(_ options: AVAudioSession.CategoryOptions) -> String {
-        var names: [String] = []
-        if options.contains(.mixWithOthers) { names.append("mixWithOthers") }
-        if options.contains(.duckOthers) { names.append("duckOthers") }
-        if options.contains(.allowBluetooth) { names.append("allowBluetooth") }
-        if options.contains(.defaultToSpeaker) { names.append("defaultToSpeaker") }
-        if options.contains(.interruptSpokenAudioAndMixWithOthers) {
-            names.append("interruptSpokenAudioAndMixWithOthers")
-        }
-        if options.contains(.allowBluetoothA2DP) { names.append("allowBluetoothA2DP") }
-        if options.contains(.allowAirPlay) { names.append("allowAirPlay") }
-        if options.contains(.overrideMutedMicrophoneInterruption) {
-            names.append("overrideMutedMicrophoneInterruption")
-        }
-        return names.isEmpty ? "[]" : "[\(names.joined(separator: ","))]"
+        try? session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+        try? session.setActive(true)
     }
 
     private func spokenText(from source: String) -> String {
@@ -321,9 +267,7 @@ extension VoiceTutor: AVAudioPlayerDelegate {
                     "success": "\(flag)",
                 ])
             }
-            self.logAudioSession("playback_finished", requestID: self.latencyTrace?.id)
             self.onSpeechFinished?()
-            self.onSpeechCompleted?(self.latencyTrace?.id, flag)
         }
     }
 }

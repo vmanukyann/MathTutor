@@ -34,8 +34,6 @@ struct LiveTutorSessionView: View {
     @State private var activeSpeechLatencyContext: TutorSpeechLatencyContext?
     @State private var recentTutorContext: RecentTutorContext?
     @State private var isAwaitingFollowUpQuestion = false
-    @State private var isChecking = false
-    @State private var pendingCheckSpeechRequestID: String?
 
     private let tutorClient = SupabaseTutorClient(configuration: AppSecrets.supabase)
     private let policy = TutorPolicy(noAnswerMode: true)
@@ -68,9 +66,6 @@ struct LiveTutorSessionView: View {
             print("mathtutor_airplay idle_timer_disabled")
             voice.onSpeechStarted = {
                 voiceRecognizer.setTutorSpeaking(true)
-                if let requestID = pendingCheckSpeechRequestID {
-                    logCheckPipeline("tts_started", requestID: requestID)
-                }
                 if let activeFollowUpRequestID {
                     logFollowUp("playback_started", requestID: activeFollowUpRequestID)
                 }
@@ -78,12 +73,6 @@ struct LiveTutorSessionView: View {
             voice.onSpeechFinished = {
                 voiceRecognizer.setTutorSpeaking(false)
                 activeFollowUpRequestID = nil
-            }
-            voice.onSpeechCompleted = { completedRequestID, completed in
-                guard let requestID = pendingCheckSpeechRequestID,
-                      completedRequestID == requestID else { return }
-                logCheckPipeline(completed ? "tts_completed" : "tts_cancelled", requestID: requestID)
-                resetCheckingState(requestID: requestID, reason: completed ? "tts_completed" : "tts_cancelled")
             }
             await camera.start()
             Task {
@@ -118,10 +107,6 @@ struct LiveTutorSessionView: View {
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
             print("mathtutor_airplay idle_timer_enabled")
-            if let requestID = activeLatencyRequestID, isChecking {
-                logCheckPipeline("request_cancelled", requestID: requestID, fields: ["reason": "view_disappeared"])
-                resetCheckingState(requestID: requestID, reason: "view_disappeared")
-            }
             activeCheckID = nil
             camera.stop()
             voice.stop()
@@ -315,12 +300,12 @@ struct LiveTutorSessionView: View {
                 Button {
                     Task { _ = await checkWork() }
                 } label: {
-                    Label(isChecking ? "Checking..." : "Check Work", systemImage: isChecking ? "hourglass" : "viewfinder")
+                    Label(status == .thinking ? "Checking..." : "Check Work", systemImage: status == .thinking ? "hourglass" : "viewfinder")
                         .frame(minWidth: 220)
                 }
                 .buttonStyle(MTLabeledControlButton(fill: MTTheme.chalkboardGreen, isFilled: true))
-                .disabled(isChecking)
-                .accessibilityLabel(isChecking ? "Checking work" : "Check work")
+                .disabled(status == .thinking)
+                .accessibilityLabel(status == .thinking ? "Checking work" : "Check work")
 
                 HStack(spacing: 8) {
                     Button {
@@ -329,7 +314,7 @@ struct LiveTutorSessionView: View {
                         Label("Show Step", systemImage: appModel.externalDisplay.isConnected ? "airplayvideo" : "rectangle.inset.filled.and.person.filled")
                     }
                     .buttonStyle(MTLabeledControlButton(tint: MTTheme.labGreen))
-                    .disabled(isChecking || !canRequestTeachMode)
+                    .disabled(status == .thinking || !canRequestTeachMode)
                     .accessibilityLabel(appModel.externalDisplay.isConnected ? "Show step on external display" : "Show step")
 
                     Button {
@@ -666,21 +651,8 @@ struct LiveTutorSessionView: View {
         reusePreviousFrame: Bool = false,
         isFollowUp: Bool = false
     ) async -> Bool {
-        if isChecking {
-            logCheckPipeline(
-                "duplicate_request_ignored",
-                requestID: activeLatencyRequestID ?? "none",
-                fields: ["source": isFollowUp ? "follow_up" : "check_work"]
-            )
-            return false
-        }
         guard status != .thinking else { return false }
         guard isFollowUp || Date().timeIntervalSince(lastCheckRequest) >= checkWorkCooldown else {
-            logCheckPipeline(
-                "duplicate_request_ignored",
-                requestID: activeLatencyRequestID ?? "cooldown",
-                fields: ["source": "cooldown"]
-            )
             return false
         }
 
@@ -688,13 +660,9 @@ struct LiveTutorSessionView: View {
         let requestID = checkID.uuidString
         let clock = ContinuousClock()
         let userActionStarted = clock.now
-        isChecking = true
         activeCheckID = checkID
         activeLatencyRequestID = requestID
         activeSpeechLatencyContext = nil
-        pendingCheckSpeechRequestID = nil
-        voice.stop()
-        logCheckPipeline("request_started", requestID: requestID)
         logElevenLabsLatency("user_action_request_started", requestID: requestID)
         if isFollowUp {
             logFollowUp("request_started", requestID: requestID)
@@ -757,11 +725,7 @@ struct LiveTutorSessionView: View {
                     "used_cached_frame": "\(usedCachedFrame)",
                 ]
             )
-            guard activeCheckID == checkID else {
-                logCheckPipeline("request_cancelled", requestID: requestID, fields: ["reason": "stale_after_capture"])
-                resetCheckingState(requestID: requestID, reason: "stale_after_capture")
-                return false
-            }
+            guard activeCheckID == checkID else { return false }
             let request = TutorObservationRequest(
                 imageBase64: imageBase64,
                 student: student,
@@ -774,7 +738,6 @@ struct LiveTutorSessionView: View {
             let tutorRequestStarted = clock.now
             var observation = try await tutorClient.observeWork(request)
             let tutorResponseReceived = clock.now
-            logCheckPipeline("response_received", requestID: requestID)
             activeSpeechLatencyContext = TutorSpeechLatencyContext(
                 userActionStarted: userActionStarted,
                 tutorRequestStarted: tutorRequestStarted,
@@ -791,11 +754,7 @@ struct LiveTutorSessionView: View {
                 isFollowUp: isFollowUp,
                 reusedPreviousContext: reusedContext != nil
             )
-            guard activeCheckID == checkID else {
-                logCheckPipeline("request_cancelled", requestID: requestID, fields: ["reason": "stale_after_response"])
-                resetCheckingState(requestID: requestID, reason: "stale_after_response")
-                return false
-            }
+            guard activeCheckID == checkID else { return false }
             let sanitizedHint = policy.sanitizedHint(observation.hint)
             if sanitizedHint != observation.hint {
                 observation.hintExplanation = nil
@@ -855,7 +814,6 @@ struct LiveTutorSessionView: View {
                 appModel.showExternalTeachMode(student: student, lines: teachModeLines)
             }
 
-            logCheckPipeline("hint_displayed", requestID: requestID)
             speakHintWithDisplayGuidance()
             activeCheckID = nil
             return true
@@ -872,8 +830,8 @@ struct LiveTutorSessionView: View {
             latestSpokenHint = nil
             errorMessage = latestHint
             status = .watching
-            logCheckPipeline("request_cancelled", requestID: requestID, fields: ["reason": "error"])
-            resetCheckingState(requestID: requestID, reason: "error")
+            voice.speak(latestHint)
+            activeCheckID = nil
             return false
         }
     }
@@ -884,15 +842,6 @@ struct LiveTutorSessionView: View {
         voiceRecognizer.recordRoutedAction(action.displayName)
         let phrase = voiceRecognizer.snapshot.lastTranscript
             .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if isChecking, action.canStartTutorRequest {
-            logCheckPipeline(
-                "duplicate_request_ignored",
-                requestID: activeLatencyRequestID ?? "none",
-                fields: ["source": "voice_command", "action": action.displayName]
-            )
-            return
-        }
 
         if isAwaitingFollowUpQuestion {
             switch action {
@@ -1097,14 +1046,9 @@ struct LiveTutorSessionView: View {
     }
 
     private func showHowToDoThis(question: String? = nil) async {
-        guard !isChecking, status != .thinking else {
-            logCheckPipeline(
-                "duplicate_request_ignored",
-                requestID: activeLatencyRequestID ?? "none",
-                fields: ["source": "show_how_to_do_this"]
-            )
-            return
-        }
+        guard status != .thinking else { return }
+        latestHint = "Let me look at this step."
+        voice.speak(latestHint)
 
         let completed = await checkWork(studentQuestion: question)
         guard completed, latestObservation != nil, checkFailure == nil else { return }
@@ -1120,7 +1064,6 @@ struct LiveTutorSessionView: View {
            checkFailure == nil,
            let presentation = latestHintPresentation,
            latestHint == presentation.combinedText {
-            prepareFinalCheckSpeechIfNeeded()
             voice.speak(
                 latestSpokenHint ?? SpokenHintPolicy.playbackText(
                     spokenHint: nil,
@@ -1131,18 +1074,11 @@ struct LiveTutorSessionView: View {
             )
             return
         }
-        prepareFinalCheckSpeechIfNeeded()
         voice.speak(
             latestHint,
             requestID: activeLatencyRequestID,
             latencyContext: activeSpeechLatencyContext
         )
-    }
-
-    private func prepareFinalCheckSpeechIfNeeded() {
-        guard isChecking, let requestID = activeLatencyRequestID else { return }
-        voice.stop()
-        pendingCheckSpeechRequestID = requestID
     }
 
     private func askTeachModeQuestion() {
@@ -1197,18 +1133,6 @@ struct LiveTutorSessionView: View {
 
     private var isMicrophoneActive: Bool {
         microphoneEnabled && voiceRecognizer.snapshot.isListening
-    }
-
-    private func resetCheckingState(requestID: String, reason: String) {
-        guard isChecking
-            || activeLatencyRequestID == requestID
-            || pendingCheckSpeechRequestID == requestID else { return }
-        isChecking = false
-        activeCheckID = nil
-        activeLatencyRequestID = nil
-        activeSpeechLatencyContext = nil
-        pendingCheckSpeechRequestID = nil
-        logCheckPipeline("checking_state_reset", requestID: requestID, fields: ["reason": reason])
     }
 }
 
@@ -1287,29 +1211,6 @@ private func logFollowUp(
         .joined(separator: " ")
     let message = "mathtutor_followup event=\(event) request_id=\(requestID)"
     print(suffix.isEmpty ? message : "\(message) \(suffix)")
-}
-
-private func logCheckPipeline(
-    _ event: String,
-    requestID: String,
-    fields: [String: String] = [:]
-) {
-    let suffix = fields.sorted { $0.key < $1.key }
-        .map { "\($0.key)=\($0.value)" }
-        .joined(separator: " ")
-    let message = "mathtutor_check_pipeline event=\(event) request_id=\(requestID)"
-    print(suffix.isEmpty ? message : "\(message) \(suffix)")
-}
-
-private extension VoiceRoutedAction {
-    var canStartTutorRequest: Bool {
-        switch self {
-        case .checkWork, .askQuestion, .followUp, .enterTeachMode, .displayOnScreen:
-            true
-        default:
-            false
-        }
-    }
 }
 
 private enum CheckFailure {

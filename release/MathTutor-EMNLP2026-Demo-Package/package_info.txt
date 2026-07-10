@@ -1,0 +1,5 @@
+Package name: MathTutor EMNLP 2026 Demo Package
+MathTutor is a multimodal AI tutor for hint-based mathematics guidance using camera input and voice interaction.
+Screenshots, demo video, latency results, and evaluation materials will be added manually by the author.
+No secrets or API keys are included.
+The app may require Xcode, Supabase configuration, and optional iPad hardware to run.

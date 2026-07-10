@@ -1,0 +1,7 @@
+verify_jwt = false
+
+[functions.tts-elevenlabs]
+enabled = true
+verify_jwt = false
+import_map = "./functions/tts-elevenlabs/deno.json"
+entrypoint = "./functions/tts-elevenlabs/index.ts"
